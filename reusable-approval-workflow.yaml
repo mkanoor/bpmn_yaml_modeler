@@ -1,0 +1,308 @@
+process:
+  id: process_1
+  name: Reusable Approval Pattern
+
+  # Define the reusable approval subprocess separately
+  subProcesses:
+    - id: approval_subprocess
+      name: Approval Subprocess
+      description: "Reusable approval logic called multiple times from main process"
+      elements:
+        - id: sub_start
+          type: startEvent
+          name: Start Approval
+          x: 100
+          y: 600
+          properties:
+            documentation: "Approval subprocess starts"
+
+        - id: sub_review
+          type: task
+          name: Review & Approve
+          x: 220
+          y: 600
+          properties:
+            documentation: "Manager reviews and makes approval decision"
+
+        - id: sub_decision
+          type: exclusiveGateway
+          name: Approved?
+          x: 380
+          y: 600
+          properties:
+            documentation: "Decision gateway for approval"
+
+        - id: sub_end_approved
+          type: endEvent
+          name: Approved
+          x: 500
+          y: 550
+          properties:
+            documentation: "Approval granted"
+
+        - id: sub_reject_task
+          type: task
+          name: Notify Rejection
+          x: 380
+          y: 700
+          properties:
+            documentation: "Send rejection notification"
+
+        - id: sub_end_rejected
+          type: endEvent
+          name: Rejected
+          x: 500
+          y: 700
+          properties:
+            documentation: "Approval denied"
+
+      connections:
+        - id: sub_conn_1
+          type: sequenceFlow
+          name: ""
+          from: sub_start
+          to: sub_review
+
+        - id: sub_conn_2
+          type: sequenceFlow
+          name: ""
+          from: sub_review
+          to: sub_decision
+
+        - id: sub_conn_3
+          type: sequenceFlow
+          name: "yes"
+          from: sub_decision
+          to: sub_end_approved
+
+        - id: sub_conn_4
+          type: sequenceFlow
+          name: "no"
+          from: sub_decision
+          to: sub_reject_task
+
+        - id: sub_conn_5
+          type: sequenceFlow
+          name: ""
+          from: sub_reject_task
+          to: sub_end_rejected
+
+  pools:
+    - id: pool_1
+      name: Multi-Approval Process
+      x: 50
+      y: 50
+      width: 1400
+      height: 400
+      lanes:
+        - id: lane_1
+          name: Main Process Lane
+          height: 400
+
+  elements:
+    # Main Process Flow
+    - id: element_1
+      type: startEvent
+      name: Start
+      x: 120
+      y: 220
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: "Process begins"
+
+    - id: element_2
+      type: task
+      name: Prepare Request
+      x: 240
+      y: 220
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: "Prepare initial approval request"
+
+    # Call Activity 1 - First approval
+    - id: element_3
+      type: callActivity
+      name: Level 1 Approval
+      x: 400
+      y: 220
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: "Calls the reusable approval subprocess for Level 1 approval"
+        calledElement: approval_subprocess
+
+    - id: element_4
+      type: task
+      name: Update Records
+      x: 560
+      y: 220
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: "Update system records after Level 1 approval"
+
+    # Call Activity 2 - Second approval (same subprocess)
+    - id: element_5
+      type: callActivity
+      name: Level 2 Approval
+      x: 720
+      y: 220
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: "Calls the same reusable approval subprocess for Level 2 approval"
+        calledElement: approval_subprocess
+
+    - id: element_6
+      type: task
+      name: Process Payment
+      x: 880
+      y: 220
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: "Process payment after Level 2 approval"
+
+    # Call Activity 3 - Third approval (same subprocess)
+    - id: element_7
+      type: callActivity
+      name: Final Approval
+      x: 1040
+      y: 220
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: "Calls the same reusable approval subprocess for final approval"
+        calledElement: approval_subprocess
+
+    - id: element_8
+      type: task
+      name: Complete Transaction
+      x: 1200
+      y: 220
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: "Finalize and complete the transaction"
+
+    - id: element_9
+      type: endEvent
+      name: End Success
+      x: 1350
+      y: 220
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: "Process completed successfully"
+
+    # Rejection handler
+    - id: element_10
+      type: task
+      name: Handle Any Rejection
+      x: 720
+      y: 350
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: "Central rejection handler for all approval failures"
+
+    - id: element_11
+      type: endEvent
+      name: End Rejected
+      x: 880
+      y: 350
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: "Process ended due to rejection at any level"
+
+    # Visual representation of the reusable subprocess (shown below main pool)
+    - id: subprocess_container
+      type: subProcess
+      name: Approval Subprocess (Reusable)
+      x: 300
+      y: 600
+      poolId: null
+      laneId: null
+      properties:
+        documentation: "This subprocess is called by all three Call Activities above"
+
+  connections:
+    # Main flow
+    - id: conn_1
+      type: sequenceFlow
+      name: ""
+      from: element_1
+      to: element_2
+
+    - id: conn_2
+      type: sequenceFlow
+      name: ""
+      from: element_2
+      to: element_3
+
+    - id: conn_3
+      type: sequenceFlow
+      name: "approved"
+      from: element_3
+      to: element_4
+
+    # Rejection path from Level 1
+    - id: conn_4
+      type: sequenceFlow
+      name: "rejected"
+      from: element_3
+      to: element_10
+
+    - id: conn_5
+      type: sequenceFlow
+      name: ""
+      from: element_4
+      to: element_5
+
+    - id: conn_6
+      type: sequenceFlow
+      name: "approved"
+      from: element_5
+      to: element_6
+
+    # Rejection path from Level 2
+    - id: conn_7
+      type: sequenceFlow
+      name: "rejected"
+      from: element_5
+      to: element_10
+
+    - id: conn_8
+      type: sequenceFlow
+      name: ""
+      from: element_6
+      to: element_7
+
+    - id: conn_9
+      type: sequenceFlow
+      name: "approved"
+      from: element_7
+      to: element_8
+
+    # Rejection path from Final Approval
+    - id: conn_10
+      type: sequenceFlow
+      name: "rejected"
+      from: element_7
+      to: element_10
+
+    - id: conn_11
+      type: sequenceFlow
+      name: ""
+      from: element_8
+      to: element_9
+
+    # Rejection handler to end
+    - id: conn_12
+      type: sequenceFlow
+      name: ""
+      from: element_10
+      to: element_11

@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BPMN Modeler</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <header>
+            <h1>BPMN Modeler</h1>
+            <div class="toolbar">
+                <button id="newBtn" class="btn">New</button>
+                <button id="saveBtn" class="btn">Export YAML</button>
+                <button id="loadBtn" class="btn">Import YAML</button>
+                <input type="file" id="fileInput" accept=".yaml,.yml" style="display: none;">
+                <button id="executeBtn" class="btn execute-workflow-btn">▶ Execute Workflow</button>
+                <button id="clearExecutionBtn" class="btn" style="background-color: #95a5a6; color: white;">Clear Execution</button>
+            </div>
+        </header>
+
+        <div class="main-content">
+            <aside class="palette">
+                <h3>Elements</h3>
+                <div class="palette-section">
+                    <h4>Events</h4>
+                    <div class="palette-item" data-type="startEvent">
+                        <svg width="40" height="40">
+                            <circle cx="20" cy="20" r="15" fill="white" stroke="#000" stroke-width="2"/>
+                        </svg>
+                        <span>Start</span>
+                    </div>
+                    <div class="palette-item" data-type="endEvent">
+                        <svg width="40" height="40">
+                            <circle cx="20" cy="20" r="15" fill="white" stroke="#000" stroke-width="4"/>
+                        </svg>
+                        <span>End</span>
+                    </div>
+                    <div class="palette-item" data-type="intermediateEvent">
+                        <svg width="40" height="40">
+                            <circle cx="20" cy="20" r="15" fill="white" stroke="#000" stroke-width="2"/>
+                            <circle cx="20" cy="20" r="12" fill="none" stroke="#000" stroke-width="2"/>
+                        </svg>
+                        <span>Intermediate</span>
+                    </div>
+                    <div class="palette-item" data-type="timerIntermediateCatchEvent">
+                        <svg width="40" height="40">
+                            <circle cx="20" cy="20" r="15" fill="white" stroke="#000" stroke-width="2"/>
+                            <circle cx="20" cy="20" r="12" fill="none" stroke="#000" stroke-width="2"/>
+                            <!-- Timer clock icon -->
+                            <circle cx="20" cy="20" r="8" fill="none" stroke="#000" stroke-width="1"/>
+                            <line x1="20" y1="20" x2="20" y2="15" stroke="#000" stroke-width="1.5"/>
+                            <line x1="20" y1="20" x2="24" y2="20" stroke="#000" stroke-width="1.5"/>
+                        </svg>
+                        <span>Timer</span>
+                    </div>
+                    <div class="palette-item" data-type="boundaryTimerEvent">
+                        <svg width="40" height="40">
+                            <circle cx="20" cy="20" r="12" fill="white" stroke="#000" stroke-width="2"/>
+                            <circle cx="20" cy="20" r="9" fill="none" stroke="#000" stroke-width="2"/>
+                            <!-- Timer clock icon (smaller) -->
+                            <circle cx="20" cy="20" r="6" fill="none" stroke="#000" stroke-width="1"/>
+                            <line x1="20" y1="20" x2="20" y2="16" stroke="#000" stroke-width="1"/>
+                            <line x1="20" y1="20" x2="23" y2="20" stroke="#000" stroke-width="1"/>
+                        </svg>
+                        <span>Boundary Timer</span>
+                    </div>
+                </div>
+
+                <div class="palette-section">
+                    <h4>Activities</h4>
+                    <div class="palette-item" data-type="task">
+                        <svg width="40" height="40">
+                            <rect x="5" y="10" width="30" height="20" rx="5" fill="white" stroke="#000" stroke-width="2"/>
+                        </svg>
+                        <span>Task</span>
+                    </div>
+                    <div class="palette-item" data-type="userTask">
+                        <svg width="40" height="40">
+                            <rect x="5" y="10" width="30" height="20" rx="5" fill="white" stroke="#000" stroke-width="2"/>
+                            <circle cx="11" cy="17" r="2" fill="none" stroke="#000" stroke-width="1"/>
+                            <path d="M 8 24 Q 11 21 14 24" fill="none" stroke="#000" stroke-width="1"/>
+                        </svg>
+                        <span>User Task</span>
+                    </div>
+                    <div class="palette-item" data-type="serviceTask">
+                        <svg width="40" height="40">
+                            <rect x="5" y="10" width="30" height="20" rx="5" fill="white" stroke="#000" stroke-width="2"/>
+                            <circle cx="11" cy="20" r="3" fill="none" stroke="#000" stroke-width="1"/>
+                            <line x1="11" y1="17" x2="11" y2="14" stroke="#000" stroke-width="1"/>
+                            <line x1="11" y1="23" x2="11" y2="26" stroke="#000" stroke-width="1"/>
+                            <line x1="8" y1="20" x2="5" y2="20" stroke="#000" stroke-width="1"/>
+                            <line x1="14" y1="20" x2="17" y2="20" stroke="#000" stroke-width="1"/>
+                        </svg>
+                        <span>Service Task</span>
+                    </div>
+                    <div class="palette-item" data-type="scriptTask">
+                        <svg width="40" height="40">
+                            <rect x="5" y="10" width="30" height="20" rx="5" fill="white" stroke="#000" stroke-width="2"/>
+                            <path d="M 8 15 L 9 15 L 10 16 L 9 17 L 8 17" fill="none" stroke="#000" stroke-width="1"/>
+                            <line x1="11" y1="16" x2="14" y2="16" stroke="#000" stroke-width="1"/>
+                            <line x1="8" y1="19" x2="11" y2="19" stroke="#000" stroke-width="1"/>
+                        </svg>
+                        <span>Script Task</span>
+                    </div>
+                    <div class="palette-item" data-type="sendTask">
+                        <svg width="40" height="40">
+                            <rect x="5" y="10" width="30" height="20" rx="5" fill="white" stroke="#000" stroke-width="2"/>
+                            <path d="M 7 18 L 7 23 L 15 23 L 15 18 Z" fill="#000" stroke="#000" stroke-width="1"/>
+                            <path d="M 7 18 L 11 21 L 15 18" fill="#000" stroke="#000" stroke-width="1"/>
+                        </svg>
+                        <span>Send Task</span>
+                    </div>
+                    <div class="palette-item" data-type="receiveTask">
+                        <svg width="40" height="40">
+                            <rect x="5" y="10" width="30" height="20" rx="5" fill="white" stroke="#000" stroke-width="2"/>
+                            <path d="M 7 18 L 7 23 L 15 23 L 15 18 Z" fill="white" stroke="#000" stroke-width="1"/>
+                            <path d="M 7 18 L 11 21 L 15 18" fill="white" stroke="#000" stroke-width="1"/>
+                        </svg>
+                        <span>Receive Task</span>
+                    </div>
+                    <div class="palette-item" data-type="manualTask">
+                        <svg width="40" height="40">
+                            <rect x="5" y="10" width="30" height="20" rx="5" fill="white" stroke="#000" stroke-width="2"/>
+                            <path d="M 8 21 L 8 18 L 11 18 L 11 16 L 12 16 L 12 19 L 10 19 L 10 21 Z" fill="none" stroke="#000" stroke-width="1"/>
+                        </svg>
+                        <span>Manual Task</span>
+                    </div>
+                    <div class="palette-item" data-type="businessRuleTask">
+                        <svg width="40" height="40">
+                            <rect x="5" y="10" width="30" height="20" rx="5" fill="white" stroke="#000" stroke-width="2"/>
+                            <rect x="8" y="17" width="8" height="6" fill="none" stroke="#000" stroke-width="1"/>
+                            <line x1="8" y1="19" x2="16" y2="19" stroke="#000" stroke-width="1"/>
+                            <line x1="10" y1="17" x2="10" y2="23" stroke="#000" stroke-width="1"/>
+                        </svg>
+                        <span>Business Rule</span>
+                    </div>
+                    <div class="palette-item" data-type="subProcess">
+                        <svg width="40" height="40">
+                            <rect x="5" y="10" width="30" height="20" rx="5" fill="white" stroke="#000" stroke-width="2"/>
+                            <rect x="17" y="26" width="6" height="6" fill="none" stroke="#000" stroke-width="1"/>
+                            <line x1="20" y1="26" x2="20" y2="32" stroke="#000" stroke-width="1"/>
+                            <line x1="17" y1="29" x2="23" y2="29" stroke="#000" stroke-width="1"/>
+                        </svg>
+                        <span>Sub-Process</span>
+                    </div>
+                    <div class="palette-item" data-type="callActivity">
+                        <svg width="40" height="40">
+                            <rect x="5" y="10" width="30" height="20" rx="5" fill="white" stroke="#000" stroke-width="4"/>
+                        </svg>
+                        <span>Call Activity</span>
+                    </div>
+                </div>
+
+                <div class="palette-section">
+                    <h4>Custom Tasks</h4>
+                    <div class="palette-item" data-type="agenticTask">
+                        <svg width="40" height="40">
+                            <rect x="5" y="10" width="30" height="20" rx="5" fill="white" stroke="#000" stroke-width="2"/>
+                            <!-- AI/Robot icon -->
+                            <circle cx="11" cy="17" r="2.5" fill="none" stroke="#6366f1" stroke-width="1.5"/>
+                            <circle cx="11" cy="17" r="1" fill="#6366f1"/>
+                            <path d="M 8 22 L 8 24 L 14 24 L 14 22 L 13 22 L 13 20 L 9 20 L 9 22 Z" fill="none" stroke="#6366f1" stroke-width="1.5"/>
+                            <line x1="11" y1="15" x2="11" y2="13" stroke="#6366f1" stroke-width="1.5"/>
+                        </svg>
+                        <span>Agentic Task</span>
+                    </div>
+                </div>
+
+                <div class="palette-section">
+                    <h4>Gateways</h4>
+                    <div class="palette-item" data-type="exclusiveGateway">
+                        <svg width="40" height="40">
+                            <path d="M 20 5 L 35 20 L 20 35 L 5 20 Z" fill="white" stroke="#000" stroke-width="2"/>
+                            <text x="20" y="27" text-anchor="middle" font-size="20" font-weight="bold">×</text>
+                        </svg>
+                        <span>Exclusive</span>
+                    </div>
+                    <div class="palette-item" data-type="parallelGateway">
+                        <svg width="40" height="40">
+                            <path d="M 20 5 L 35 20 L 20 35 L 5 20 Z" fill="white" stroke="#000" stroke-width="2"/>
+                            <text x="20" y="26" text-anchor="middle" font-size="20" font-weight="bold">+</text>
+                        </svg>
+                        <span>Parallel</span>
+                    </div>
+                    <div class="palette-item" data-type="inclusiveGateway">
+                        <svg width="40" height="40">
+                            <path d="M 20 5 L 35 20 L 20 35 L 5 20 Z" fill="white" stroke="#000" stroke-width="2"/>
+                            <circle cx="20" cy="20" r="8" fill="none" stroke="#000" stroke-width="2"/>
+                        </svg>
+                        <span>Inclusive</span>
+                    </div>
+                </div>
+
+                <div class="palette-section">
+                    <h4>Swimlanes</h4>
+                    <div class="palette-item" data-type="pool">
+                        <svg width="40" height="40">
+                            <rect x="5" y="10" width="30" height="20" fill="#e8f4f8" stroke="#000" stroke-width="2"/>
+                        </svg>
+                        <span>Pool</span>
+                    </div>
+                    <div class="palette-item" data-type="lane">
+                        <svg width="40" height="40">
+                            <rect x="5" y="10" width="30" height="20" fill="#f0f8ff" stroke="#000" stroke-width="1"/>
+                        </svg>
+                        <span>Lane</span>
+                    </div>
+                </div>
+
+                <div class="palette-section">
+                    <h4>Connections</h4>
+                    <div class="palette-item" data-type="sequenceFlow">
+                        <svg width="40" height="40">
+                            <line x1="5" y1="20" x2="30" y2="20" stroke="#000" stroke-width="2"/>
+                            <polygon points="30,20 25,17 25,23" fill="#000"/>
+                        </svg>
+                        <span>Sequence Flow</span>
+                    </div>
+                </div>
+            </aside>
+
+            <main class="canvas-container">
+                <div class="canvas-controls">
+                    <button id="undoBtn" class="btn-small" title="Undo (Ctrl+Z)">↶ Undo</button>
+                    <button id="redoBtn" class="btn-small" title="Redo (Ctrl+Y)">↷ Redo</button>
+                    <span style="margin: 0 0.5rem; border-left: 1px solid #ccc;"></span>
+                    <button id="addPoolBtn" class="btn-small">Add Pool</button>
+                    <button id="zoomInBtn" class="btn-small" title="Zoom In (Mouse Wheel)">🔍+</button>
+                    <button id="zoomOutBtn" class="btn-small" title="Zoom Out (Mouse Wheel)">🔍-</button>
+                    <button id="resetZoomBtn" class="btn-small" title="Reset View">↺ Reset</button>
+                    <button id="fitToViewBtn" class="btn-small" title="Fit to View">⛶ Fit</button>
+                    <span style="margin: 0 0.5rem; color: #666; font-size: 0.85rem;" title="Shift+Drag or Middle-Click to Pan">✋ Pan: Shift+Drag</span>
+                    <button id="deleteBtn" class="btn-small btn-danger">Delete Selected</button>
+                </div>
+                <svg id="canvas" width="100%" height="100%">
+                    <defs>
+                        <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+                            <polygon points="0 0, 10 3, 0 6" fill="#000" />
+                        </marker>
+                    </defs>
+                    <g id="mainGroup" transform="scale(1)">
+                        <g id="poolsLayer"></g>
+                        <g id="connectionsLayer"></g>
+                        <g id="elementsLayer"></g>
+                    </g>
+                </svg>
+            </main>
+
+            <aside class="properties-panel">
+                <h3>Properties</h3>
+                <div id="propertiesContent">
+                    <p class="placeholder">Select an element to edit properties</p>
+                </div>
+            </aside>
+        </div>
+
+        <div id="yamlModal" class="modal">
+            <div class="modal-content">
+                <span class="close">&times;</span>
+                <h2>YAML Export</h2>
+                <textarea id="yamlOutput" rows="20"></textarea>
+                <button id="copyYamlBtn" class="btn">Copy to Clipboard</button>
+                <button id="downloadYamlBtn" class="btn">Download</button>
+            </div>
+        </div>
+
+        <div id="executeModal" class="modal">
+            <div class="modal-content">
+                <span class="close">&times;</span>
+                <h2>Execute Workflow</h2>
+
+                <div class="execution-form">
+                    <div class="form-group">
+                        <label for="logFileInput">Upload Log File (Optional):</label>
+                        <input type="file" id="logFileInput" accept=".log,.txt,*">
+                        <p class="help-text">Upload a log file to analyze. The file will be read locally and passed to the workflow.</p>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="contextInput">Context Variables (JSON):</label>
+                        <textarea id="contextInput" rows="10" placeholder='{\n  "requester": {\n    "email": "user@example.com",\n    "name": "Test User"\n  }\n}'></textarea>
+                        <p class="help-text">Enter any additional context variables needed by the workflow.</p>
+                    </div>
+
+                    <div class="modal-actions">
+                        <button id="startExecutionBtn" class="btn execute-workflow-btn">Start Execution</button>
+                        <button id="cancelExecutionBtn" class="btn">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js"></script>
+    <script src="agui-client.js"></script>
+    <script src="app.js"></script>
+    <script src="workflow-executor.js"></script>
+</body>
+</html>

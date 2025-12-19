@@ -1,0 +1,298 @@
+process:
+  id: process_1
+  name: AI-Powered Customer Support Workflow
+  pools:
+    - id: pool_1
+      name: Intelligent Customer Support Process
+      x: 50
+      y: 50
+      width: 1600
+      height: 450
+      lanes:
+        - id: lane_1
+          name: Customer Interaction Lane
+          height: 225
+        - id: lane_2
+          name: AI Agent Lane
+          height: 225
+  elements:
+    # Customer Lane - Start
+    - id: element_1
+      type: startEvent
+      name: Support Request
+      x: 120
+      y: 140
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: "Customer submits a support request"
+
+    # Customer Lane - User receives request
+    - id: element_2
+      type: receiveTask
+      name: Receive Request
+      x: 240
+      y: 140
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: "System receives customer support request via email/chat/form"
+
+    # AI Agent Lane - Agentic Task 1: Analyze Request
+    - id: element_3
+      type: agenticTask
+      name: Analyze Request Intent
+      x: 240
+      y: 330
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        documentation: "AI agent analyzes customer request using NLP to understand intent, sentiment, and urgency"
+        agentType: "nlp-classifier"
+        model: "gpt-4"
+        capabilities: ["intent-detection", "sentiment-analysis", "entity-extraction"]
+
+    # AI Agent Lane - Gateway: Can AI handle?
+    - id: element_4
+      type: exclusiveGateway
+      name: AI Can Handle?
+      x: 390
+      y: 330
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        documentation: "Decision point: Can AI agent handle this autonomously?"
+
+    # AI Agent Lane - Agentic Task 2: Generate Response
+    - id: element_5
+      type: agenticTask
+      name: Generate Solution
+      x: 540
+      y: 330
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        documentation: "AI agent generates personalized response using knowledge base and customer history"
+        agentType: "response-generator"
+        model: "gpt-4"
+        capabilities: ["knowledge-retrieval", "response-generation", "personalization"]
+
+    # AI Agent Lane - Agentic Task 3: Validate Solution
+    - id: element_6
+      type: agenticTask
+      name: Validate & Quality Check
+      x: 700
+      y: 330
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        documentation: "AI agent validates the generated solution for accuracy and compliance"
+        agentType: "quality-validator"
+        model: "gpt-4"
+        capabilities: ["fact-checking", "compliance-validation", "tone-analysis"]
+
+    # Customer Lane - Send AI Response
+    - id: element_7
+      type: sendTask
+      name: Send AI Response
+      x: 860
+      y: 140
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: "Automated response sent to customer"
+
+    # Customer Lane - Receive Feedback
+    - id: element_8
+      type: receiveTask
+      name: Wait for Feedback
+      x: 1000
+      y: 140
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: "Wait for customer satisfaction feedback"
+
+    # AI Agent Lane - Agentic Task 4: Learn from Feedback
+    - id: element_9
+      type: agenticTask
+      name: Learn from Interaction
+      x: 1000
+      y: 330
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        documentation: "AI agent learns from customer feedback to improve future responses"
+        agentType: "learning-agent"
+        model: "reinforcement-learning"
+        capabilities: ["feedback-analysis", "model-fine-tuning", "knowledge-update"]
+
+    # Customer Lane - Gateway: Satisfied?
+    - id: element_10
+      type: exclusiveGateway
+      name: Satisfied?
+      x: 1150
+      y: 140
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: "Customer satisfaction decision point"
+
+    # Customer Lane - End Success
+    - id: element_11
+      type: endEvent
+      name: Resolved
+      x: 1300
+      y: 140
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: "Issue successfully resolved by AI"
+
+    # Customer Lane - Escalate to Human
+    - id: element_12
+      type: userTask
+      name: Human Agent Review
+      x: 540
+      y: 140
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: "Escalate to human agent for complex issues"
+
+    # Customer Lane - Service Task: Update CRM
+    - id: element_13
+      type: serviceTask
+      name: Update CRM
+      x: 1150
+      y: 40
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: "Update customer relationship management system with interaction details"
+
+    # AI Agent Lane - Agentic Task 5: Continuous Monitoring
+    - id: element_14
+      type: agenticTask
+      name: Monitor Performance
+      x: 1300
+      y: 330
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        documentation: "AI agent continuously monitors its own performance metrics"
+        agentType: "monitoring-agent"
+        model: "analytics-engine"
+        capabilities: ["performance-tracking", "anomaly-detection", "auto-improvement"]
+
+  connections:
+    - id: conn_1
+      type: sequenceFlow
+      name: ""
+      from: element_1
+      to: element_2
+
+    # Receive to Analyze (cross-lane)
+    - id: conn_2
+      type: sequenceFlow
+      name: ""
+      from: element_2
+      to: element_3
+
+    # Analyze to Gateway
+    - id: conn_3
+      type: sequenceFlow
+      name: ""
+      from: element_3
+      to: element_4
+
+    # AI can handle - proceed
+    - id: conn_4
+      type: sequenceFlow
+      name: "yes (80%)"
+      from: element_4
+      to: element_5
+
+    # AI cannot handle - escalate
+    - id: conn_5
+      type: sequenceFlow
+      name: "no - complex"
+      from: element_4
+      to: element_12
+
+    # Human agent back to send
+    - id: conn_6
+      type: sequenceFlow
+      name: ""
+      from: element_12
+      to: element_7
+
+    # Generate to Validate
+    - id: conn_7
+      type: sequenceFlow
+      name: ""
+      from: element_5
+      to: element_6
+
+    # Validate to Send (cross-lane)
+    - id: conn_8
+      type: sequenceFlow
+      name: "approved"
+      from: element_6
+      to: element_7
+
+    # Send to Wait for Feedback
+    - id: conn_9
+      type: sequenceFlow
+      name: ""
+      from: element_7
+      to: element_8
+
+    # Feedback to Learn (cross-lane)
+    - id: conn_10
+      type: sequenceFlow
+      name: ""
+      from: element_8
+      to: element_9
+
+    # Learn back to Satisfied gateway (cross-lane)
+    - id: conn_11
+      type: sequenceFlow
+      name: ""
+      from: element_9
+      to: element_10
+
+    # Satisfied - end
+    - id: conn_12
+      type: sequenceFlow
+      name: "yes"
+      from: element_10
+      to: element_11
+
+    # Not satisfied - back to human
+    - id: conn_13
+      type: sequenceFlow
+      name: "no - escalate"
+      from: element_10
+      to: element_12
+
+    # Update CRM parallel branch
+    - id: conn_14
+      type: sequenceFlow
+      name: ""
+      from: element_8
+      to: element_13
+
+    # CRM to Satisfied
+    - id: conn_15
+      type: sequenceFlow
+      name: ""
+      from: element_13
+      to: element_10
+
+    # Monitoring runs continuously
+    - id: conn_16
+      type: sequenceFlow
+      name: "continuous"
+      from: element_9
+      to: element_14

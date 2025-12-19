@@ -1,0 +1,270 @@
+process:
+  id: process_1
+  name: Order Fulfillment with Expanded Subprocess
+  pools:
+    - id: pool_1
+      name: E-Commerce Order Process
+      x: 50
+      y: 50
+      width: 1400
+      height: 350
+      lanes:
+        - id: lane_1
+          name: Order Processing
+          height: 350
+  elements:
+    # Main Flow Start
+    - id: element_1
+      type: startEvent
+      name: Order Received
+      x: 120
+      y: 200
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: "Customer places an order"
+
+    # Validate Order Task
+    - id: element_2
+      type: userTask
+      name: Validate Order
+      x: 250
+      y: 200
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        assignee: "order-team@company.com"
+        documentation: "Verify order details and inventory"
+
+    # EXPANDED SUBPROCESS - Payment Processing
+    - id: element_3
+      type: subProcess
+      name: Payment Processing
+      x: 450
+      y: 200
+      poolId: pool_1
+      laneId: lane_1
+      expanded: true
+      width: 400
+      height: 180
+      properties:
+        documentation: "Handle payment authorization and capture"
+      childElements:
+        - id: sub_start_1
+          type: startEvent
+          name: Start Payment
+          x: -150
+          y: 0
+          properties:
+            documentation: "Payment subprocess begins"
+
+        - id: sub_task_1
+          type: serviceTask
+          name: Authorize Card
+          x: -50
+          y: 0
+          properties:
+            implementation: "External"
+            topic: "payment-authorization"
+            documentation: "Call payment gateway to authorize card"
+
+        - id: sub_gateway_1
+          type: exclusiveGateway
+          name: Authorized?
+          x: 50
+          y: 0
+          properties:
+            documentation: "Check if card was authorized"
+
+        - id: sub_task_2
+          type: serviceTask
+          name: Capture Payment
+          x: 120
+          y: -40
+          properties:
+            implementation: "External"
+            topic: "payment-capture"
+            documentation: "Capture the authorized payment"
+
+        - id: sub_end_success
+          type: endEvent
+          name: Payment OK
+          x: 180
+          y: -40
+          properties:
+            documentation: "Payment successfully processed"
+
+        - id: sub_task_3
+          type: sendTask
+          name: Send Failure Notice
+          x: 120
+          y: 40
+          properties:
+            messageType: "Email"
+            to: "${customer.email}"
+            subject: "Payment Failed"
+            documentation: "Notify customer of payment failure"
+
+        - id: sub_end_fail
+          type: endEvent
+          name: Payment Failed
+          x: 180
+          y: 40
+          properties:
+            documentation: "Payment processing failed"
+
+      childConnections:
+        - id: sub_conn_1
+          type: sequenceFlow
+          name: ""
+          from: sub_start_1
+          to: sub_task_1
+
+        - id: sub_conn_2
+          type: sequenceFlow
+          name: ""
+          from: sub_task_1
+          to: sub_gateway_1
+
+        - id: sub_conn_3
+          type: sequenceFlow
+          name: "yes"
+          from: sub_gateway_1
+          to: sub_task_2
+
+        - id: sub_conn_4
+          type: sequenceFlow
+          name: "no"
+          from: sub_gateway_1
+          to: sub_task_3
+
+        - id: sub_conn_5
+          type: sequenceFlow
+          name: ""
+          from: sub_task_2
+          to: sub_end_success
+
+        - id: sub_conn_6
+          type: sequenceFlow
+          name: ""
+          from: sub_task_3
+          to: sub_end_fail
+
+    # Ship Order Task
+    - id: element_4
+      type: manualTask
+      name: Ship Order
+      x: 720
+      y: 200
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: "Warehouse ships the order"
+
+    # EXPANDED SUBPROCESS - Customer Notification
+    - id: element_5
+      type: subProcess
+      name: Customer Notifications
+      x: 950
+      y: 200
+      poolId: pool_1
+      laneId: lane_1
+      expanded: true
+      width: 350
+      height: 150
+      properties:
+        documentation: "Send various customer notifications"
+      childElements:
+        - id: sub_start_2
+          type: startEvent
+          name: Start Notify
+          x: -120
+          y: 0
+          properties: {}
+
+        - id: sub_task_4
+          type: sendTask
+          name: Email Confirmation
+          x: -20
+          y: 0
+          properties:
+            messageType: "Email"
+            to: "${customer.email}"
+            subject: "Order Shipped"
+
+        - id: sub_task_5
+          type: sendTask
+          name: SMS Update
+          x: 80
+          y: 0
+          properties:
+            messageType: "SMS"
+            to: "${customer.phone}"
+
+        - id: sub_end_2
+          type: endEvent
+          name: Notified
+          x: 140
+          y: 0
+          properties: {}
+
+      childConnections:
+        - id: sub_conn_7
+          type: sequenceFlow
+          name: ""
+          from: sub_start_2
+          to: sub_task_4
+
+        - id: sub_conn_8
+          type: sequenceFlow
+          name: ""
+          from: sub_task_4
+          to: sub_task_5
+
+        - id: sub_conn_9
+          type: sequenceFlow
+          name: ""
+          from: sub_task_5
+          to: sub_end_2
+
+    # End Event
+    - id: element_6
+      type: endEvent
+      name: Order Complete
+      x: 1250
+      y: 200
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: "Order successfully fulfilled"
+
+  connections:
+    - id: conn_1
+      type: sequenceFlow
+      name: ""
+      from: element_1
+      to: element_2
+
+    - id: conn_2
+      type: sequenceFlow
+      name: ""
+      from: element_2
+      to: element_3
+
+    - id: conn_3
+      type: sequenceFlow
+      name: "payment successful"
+      from: element_3
+      to: element_4
+
+    - id: conn_4
+      type: sequenceFlow
+      name: ""
+      from: element_4
+      to: element_5
+
+    - id: conn_5
+      type: sequenceFlow
+      name: ""
+      from: element_5
+      to: element_6

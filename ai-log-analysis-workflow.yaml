@@ -1,0 +1,518 @@
+process:
+  id: process_1
+  name: AI-Powered Log Analysis & Remediation
+  pools:
+    - id: pool_1
+      name: Automated DevOps Workflow
+      x: 50
+      y: 50
+      width: 1800
+      height: 600
+      lanes:
+        - id: lane_1
+          name: User Interaction
+          height: 200
+        - id: lane_2
+          name: AI Analysis & Generation
+          height: 200
+        - id: lane_3
+          name: Execution & Deployment
+          height: 200
+
+  elements:
+    # ===== USER INTERACTION LANE =====
+
+    # Start Event
+    - id: element_1
+      type: startEvent
+      name: User Uploads Log
+      x: 120
+      y: 130
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: "User uploads log file through web interface or API"
+
+    # Receive Task - Upload Log File
+    - id: element_2
+      type: receiveTask
+      name: Receive Log File
+      x: 250
+      y: 130
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        messageRef: "logFileUpload"
+        timeout: "300000"
+        documentation: "Receive and validate uploaded log file"
+
+    # Service Task - Store Log File
+    - id: element_3
+      type: serviceTask
+      name: Store in S3
+      x: 390
+      y: 130
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        implementation: "External"
+        topic: "file-storage"
+        resultVariable: "logFileUrl"
+        documentation: "Store log file in S3 bucket for processing"
+        custom:
+          bucket: "devops-logs"
+          encryption: "AES256"
+          retention: "30days"
+
+    # ===== AI ANALYSIS LANE =====
+
+    # Agentic Task 1 - Log Analysis with MCP Tools
+    - id: element_4
+      type: agenticTask
+      name: Analyze Logs with MCP
+      x: 390
+      y: 330
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        agentType: "log-analyzer"
+        model: "anthropic/claude-3.5-sonnet"
+        capabilities: "log-parsing, pattern-recognition, root-cause-analysis, mcp-tool-usage"
+        confidenceThreshold: 0.8
+        maxRetries: 2
+        learningEnabled: true
+        documentation: "AI agent uses MCP tools to analyze log files and identify issues"
+        custom:
+          mcpTools:
+            - "filesystem-read"
+            - "grep-search"
+            - "regex-match"
+            - "log-parser"
+            - "error-classifier"
+          analysisDepth: "comprehensive"
+          contextWindow: "16384"
+          temperature: "0.3"
+          systemPrompt: |
+            You are an expert DevOps engineer analyzing system logs.
+            Use MCP tools to:
+            1. Read and parse log files
+            2. Search for error patterns
+            3. Identify root causes
+            4. Classify issue severity
+            5. Generate diagnostic steps
+
+    # Agentic Task 2 - Generate Diagnostic Steps
+    - id: element_5
+      type: agenticTask
+      name: Generate Diagnostics
+      x: 550
+      y: 330
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        agentType: "diagnostic-generator"
+        model: "openai/gpt-4o"
+        capabilities: "step-generation, prioritization, validation"
+        confidenceThreshold: 0.85
+        maxRetries: 3
+        learningEnabled: true
+        documentation: "Generate structured diagnostic and remediation steps"
+        custom:
+          outputFormat: "json"
+          includeExplanations: "true"
+          prioritizeBySeverity: "true"
+          estimateImpact: "true"
+          temperature: "0.2"
+
+    # Gateway - Valid Diagnostics?
+    - id: element_6
+      type: exclusiveGateway
+      name: Valid Results?
+      x: 710
+      y: 330
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        documentation: "Check if AI generated valid diagnostic steps"
+
+    # ===== BACK TO USER LANE - APPROVAL =====
+
+    # User Task - Review Diagnostics
+    - id: element_7
+      type: userTask
+      name: Review & Approve Diagnostics
+      x: 870
+      y: 130
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        assignee: "${requester.email}"
+        candidateGroups: "devops-team, sre-team"
+        priority: "High"
+        dueDate: "PT2H"
+        documentation: "Human reviews AI-generated diagnostic steps and decides whether to proceed"
+        custom:
+          formFields:
+            - "diagnosticSteps"
+            - "severityLevel"
+            - "estimatedImpact"
+            - "approvalDecision"
+            - "comments"
+          uiTemplate: "diagnostic-review-form"
+
+    # Gateway - Approved?
+    - id: element_8
+      type: exclusiveGateway
+      name: Approved?
+      x: 1030
+      y: 130
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: "Human approval decision"
+
+    # ===== AI GENERATION LANE - ANSIBLE PLAYBOOK =====
+
+    # Agentic Task 3 - Generate Ansible Playbook
+    - id: element_9
+      type: agenticTask
+      name: Generate Ansible Playbook
+      x: 1190
+      y: 330
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        agentType: "playbook-generator"
+        model: "anthropic/claude-3.5-sonnet"
+        capabilities: "ansible-generation, yaml-formatting, best-practices, idempotency-check"
+        confidenceThreshold: 0.9
+        maxRetries: 2
+        learningEnabled: true
+        documentation: "Generate Ansible playbook from approved diagnostic steps"
+        custom:
+          mcpTools:
+            - "ansible-validator"
+            - "yaml-linter"
+            - "security-checker"
+          playbookStandard: "ansible-2.16"
+          includeRollback: "true"
+          dryRunMode: "true"
+          validationLevel: "strict"
+          temperature: "0.1"
+          systemPrompt: |
+            Generate production-ready Ansible playbooks following best practices:
+            1. Use proper YAML formatting
+            2. Include error handling and rollback
+            3. Make tasks idempotent
+            4. Add detailed comments
+            5. Include pre-flight checks
+            6. Validate with MCP tools
+
+    # Script Task - Validate Playbook
+    - id: element_10
+      type: scriptTask
+      name: Validate Syntax
+      x: 1350
+      y: 330
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        scriptFormat: "Python"
+        resultVariable: "validationResult"
+        documentation: "Validate Ansible playbook syntax and security"
+        script: |
+          import yaml
+          import subprocess
+
+          # Validate YAML syntax
+          with open(playbookPath) as f:
+              playbook = yaml.safe_load(f)
+
+          # Run ansible-lint
+          result = subprocess.run(
+              ['ansible-lint', playbookPath],
+              capture_output=True
+          )
+
+          validation = {
+              'valid': result.returncode == 0,
+              'errors': result.stderr.decode(),
+              'warnings': result.stdout.decode()
+          }
+
+    # Gateway - Playbook Valid?
+    - id: element_11
+      type: exclusiveGateway
+      name: Valid Playbook?
+      x: 1510
+      y: 330
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        documentation: "Check if generated playbook passes validation"
+
+    # ===== EXECUTION LANE =====
+
+    # Service Task - Store Playbook
+    - id: element_12
+      type: serviceTask
+      name: Store Playbook
+      x: 1190
+      y: 530
+      poolId: pool_1
+      laneId: lane_3
+      properties:
+        implementation: "External"
+        topic: "artifact-storage"
+        resultVariable: "playbookUrl"
+        documentation: "Store validated playbook in artifact repository"
+        custom:
+          repository: "ansible-playbooks"
+          versionControl: "git"
+          branch: "automated-remediation"
+
+    # Manual Task - Execute Playbook
+    - id: element_13
+      type: manualTask
+      name: Execute on Target Systems
+      x: 1350
+      y: 530
+      poolId: pool_1
+      laneId: lane_3
+      properties:
+        documentation: "DevOps team executes playbook on target infrastructure"
+
+    # Send Task - Notification
+    - id: element_14
+      type: sendTask
+      name: Send Success Notification
+      x: 1510
+      y: 530
+      poolId: pool_1
+      laneId: lane_3
+      properties:
+        messageType: "Email"
+        to: "${requester.email}, devops-team@company.com"
+        subject: "Log Analysis & Remediation Complete"
+        messageBody: |
+          Your log analysis workflow has completed successfully.
+
+          Summary:
+          - Log file: ${logFileName}
+          - Issues found: ${issueCount}
+          - Ansible playbook: ${playbookUrl}
+          - Execution status: ${executionStatus}
+
+          The system has been remediated according to the approved diagnostic steps.
+        documentation: "Notify stakeholders of successful completion"
+
+    # End Event - Success
+    - id: element_15
+      type: endEvent
+      name: Workflow Complete
+      x: 1670
+      y: 530
+      poolId: pool_1
+      laneId: lane_3
+      properties:
+        documentation: "Successful completion of log analysis and remediation"
+
+    # ===== ERROR HANDLING PATHS =====
+
+    # User Task - Manual Review Required
+    - id: element_16
+      type: userTask
+      name: Manual Analysis Required
+      x: 710
+      y: 450
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        assignee: "senior-sre@company.com"
+        candidateGroups: "sre-team"
+        priority: "Critical"
+        documentation: "AI couldn't generate valid diagnostics - manual intervention needed"
+
+    # End Event - Manual Escalation
+    - id: element_17
+      type: endEvent
+      name: Escalated to Human
+      x: 870
+      y: 450
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        documentation: "Workflow escalated for manual handling"
+
+    # Send Task - Rejection Notification
+    - id: element_18
+      type: sendTask
+      name: Notify Rejection
+      x: 1030
+      y: 250
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        messageType: "Email"
+        to: "${requester.email}"
+        subject: "Diagnostic Steps Rejected"
+        messageBody: "The AI-generated diagnostic steps were rejected during review. Comments: ${approvalComments}"
+        documentation: "Notify user of rejection"
+
+    # End Event - Rejected
+    - id: element_19
+      type: endEvent
+      name: Rejected by Human
+      x: 1190
+      y: 250
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: "User rejected the diagnostic steps"
+
+    # Service Task - Regenerate Playbook
+    - id: element_20
+      type: serviceTask
+      name: Fix & Regenerate
+      x: 1510
+      y: 450
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        implementation: "External"
+        topic: "playbook-regeneration"
+        documentation: "Attempt to fix validation errors and regenerate"
+        custom:
+          maxAttempts: "2"
+
+  connections:
+    # Main happy path
+    - id: conn_1
+      type: sequenceFlow
+      name: ""
+      from: element_1
+      to: element_2
+
+    - id: conn_2
+      type: sequenceFlow
+      name: ""
+      from: element_2
+      to: element_3
+
+    - id: conn_3
+      type: sequenceFlow
+      name: "stored"
+      from: element_3
+      to: element_4
+
+    - id: conn_4
+      type: sequenceFlow
+      name: ""
+      from: element_4
+      to: element_5
+
+    - id: conn_5
+      type: sequenceFlow
+      name: ""
+      from: element_5
+      to: element_6
+
+    # Valid diagnostics path
+    - id: conn_6
+      type: sequenceFlow
+      name: "yes"
+      from: element_6
+      to: element_7
+
+    # Invalid diagnostics - manual review
+    - id: conn_7
+      type: sequenceFlow
+      name: "no - low confidence"
+      from: element_6
+      to: element_16
+
+    - id: conn_8
+      type: sequenceFlow
+      name: ""
+      from: element_16
+      to: element_17
+
+    # Human approval decision
+    - id: conn_9
+      type: sequenceFlow
+      name: ""
+      from: element_7
+      to: element_8
+
+    # Approved - generate playbook
+    - id: conn_10
+      type: sequenceFlow
+      name: "approved"
+      from: element_8
+      to: element_9
+
+    # Rejected - notify and end
+    - id: conn_11
+      type: sequenceFlow
+      name: "rejected"
+      from: element_8
+      to: element_18
+
+    - id: conn_12
+      type: sequenceFlow
+      name: ""
+      from: element_18
+      to: element_19
+
+    # Playbook generation and validation
+    - id: conn_13
+      type: sequenceFlow
+      name: ""
+      from: element_9
+      to: element_10
+
+    - id: conn_14
+      type: sequenceFlow
+      name: ""
+      from: element_10
+      to: element_11
+
+    # Valid playbook - execute
+    - id: conn_15
+      type: sequenceFlow
+      name: "valid"
+      from: element_11
+      to: element_12
+
+    # Invalid playbook - try to fix
+    - id: conn_16
+      type: sequenceFlow
+      name: "validation failed"
+      from: element_11
+      to: element_20
+
+    # Retry playbook generation
+    - id: conn_17
+      type: sequenceFlow
+      name: "retry"
+      from: element_20
+      to: element_9
+
+    # Store and execute
+    - id: conn_18
+      type: sequenceFlow
+      name: ""
+      from: element_12
+      to: element_13
+
+    - id: conn_19
+      type: sequenceFlow
+      name: ""
+      from: element_13
+      to: element_14
+
+    - id: conn_20
+      type: sequenceFlow
+      name: ""
+      from: element_14
+      to: element_15

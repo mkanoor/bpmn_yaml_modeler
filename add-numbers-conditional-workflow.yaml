@@ -1,0 +1,192 @@
+process:
+  id: process_add_numbers
+  name: Add Numbers with Conditional Gateway
+  pools:
+    - id: pool_1
+      name: Number Processing Workflow
+      x: 50
+      y: 50
+      width: 1400
+      height: 400
+      lanes:
+        - id: lane_1
+          name: Processing
+          height: 200
+        - id: lane_2
+          name: Result Handling
+          height: 200
+
+  elements:
+    # ===== START =====
+    - id: element_1
+      type: startEvent
+      name: Start
+      x: 120
+      y: 130
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: "Workflow starts - will add two numbers and check if sum > 10"
+
+    # ===== ADD NUMBERS TASK =====
+    - id: element_2
+      type: scriptTask
+      name: Add Two Numbers
+      x: 250
+      y: 130
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        scriptFormat: "Python"
+        resultVariable: "sum"
+        documentation: "Script task that adds two numbers and stores result in context"
+        script: |
+          # Get input numbers from context (or use defaults)
+          num1 = context.get('number1', 7)
+          num2 = context.get('number2', 5)
+
+          # Calculate sum
+          result = num1 + num2
+
+          # Store in context
+          context['sum'] = result
+          context['num1'] = num1
+          context['num2'] = num2
+
+          print(f"Added {num1} + {num2} = {result}")
+
+    # ===== EXCLUSIVE GATEWAY (DECISION POINT) =====
+    - id: element_3
+      type: exclusiveGateway
+      name: Sum > 10?
+      x: 410
+      y: 130
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: "Check if the sum is greater than 10"
+
+    # ===== SUCCESS PATH - Process Result =====
+    - id: element_4
+      type: serviceTask
+      name: Process Valid Sum
+      x: 570
+      y: 100
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        implementation: "External"
+        topic: "sum-processing"
+        resultVariable: "processResult"
+        documentation: "Process the sum when it's > 10"
+
+    - id: element_5
+      type: sendTask
+      name: Send Success Notification
+      x: 730
+      y: 100
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        messageType: "Email"
+        to: "team@company.com"
+        subject: "Sum Calculation Success"
+        messageBody: |
+          The sum calculation was successful!
+
+          Numbers: ${num1} + ${num2}
+          Sum: ${sum}
+          Status: PASSED (sum > 10)
+
+    - id: element_6
+      type: endEvent
+      name: Success
+      x: 890
+      y: 100
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: "Workflow completed successfully"
+
+    # ===== FAILURE PATH - Sum Too Small =====
+    - id: element_7
+      type: sendTask
+      name: Send Failure Notification
+      x: 570
+      y: 280
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        messageType: "Email"
+        to: "team@company.com"
+        subject: "Sum Calculation Failed"
+        messageBody: |
+          The sum calculation did not meet the threshold.
+
+          Numbers: ${num1} + ${num2}
+          Sum: ${sum}
+          Status: FAILED (sum <= 10)
+
+          Please review the input values.
+
+    - id: element_8
+      type: endEvent
+      name: Failed - Sum Too Small
+      x: 730
+      y: 280
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        documentation: "Workflow ended - sum did not meet threshold"
+
+  connections:
+    # Main flow
+    - id: conn_1
+      type: sequenceFlow
+      name: ""
+      from: element_1
+      to: element_2
+
+    - id: conn_2
+      type: sequenceFlow
+      name: ""
+      from: element_2
+      to: element_3
+
+    # SUCCESS PATH: Sum > 10
+    - id: conn_3
+      type: sequenceFlow
+      name: "sum > 10"
+      from: element_3
+      to: element_4
+      properties:
+        condition: "${sum} > 10"
+        documentation: "This path is taken when sum is greater than 10"
+
+    - id: conn_4
+      type: sequenceFlow
+      name: ""
+      from: element_4
+      to: element_5
+
+    - id: conn_5
+      type: sequenceFlow
+      name: ""
+      from: element_5
+      to: element_6
+
+    # FAILURE PATH: Sum <= 10 (default path)
+    - id: conn_6
+      type: sequenceFlow
+      name: "default"
+      from: element_3
+      to: element_7
+      properties:
+        condition: ""
+        documentation: "Default path when sum is NOT greater than 10"
+
+    - id: conn_7
+      type: sequenceFlow
+      name: ""
+      from: element_7
+      to: element_8

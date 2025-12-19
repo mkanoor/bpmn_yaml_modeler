@@ -1,0 +1,277 @@
+process:
+  id: process_1
+  name: Multi-Stage Approval Workflow
+  pools:
+    - id: pool_1
+      name: Approval Workflow Pool
+      x: 50
+      y: 50
+      width: 1200
+      height: 500
+      lanes:
+        - id: lane_1
+          name: Main Process Lane
+          height: 250
+        - id: lane_2
+          name: Approval Lane
+          height: 250
+  elements:
+    # Main Process Lane - Start Event
+    - id: element_1
+      type: startEvent
+      name: Start Process
+      x: 120
+      y: 150
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: "Initiates the approval workflow process"
+
+    # Main Process Lane - Task 1
+    - id: element_2
+      type: task
+      name: Submit Request
+      x: 250
+      y: 150
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: "User submits initial request for approval"
+
+    # Approval Lane - Approval Task 1
+    - id: element_3
+      type: task
+      name: Review Request
+      x: 250
+      y: 400
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        documentation: "Manager reviews the submitted request"
+
+    # Approval Lane - Gateway 1 (Approved?)
+    - id: element_4
+      type: exclusiveGateway
+      name: Approved?
+      x: 390
+      y: 400
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        documentation: "Decision point for request approval"
+
+    # Main Process Lane - Task 2
+    - id: element_5
+      type: task
+      name: Process Data
+      x: 500
+      y: 150
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: "Process the approved request data"
+
+    # Approval Lane - Approval Task 2
+    - id: element_6
+      type: task
+      name: Validate Processing
+      x: 500
+      y: 400
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        documentation: "Validate data processing results"
+
+    # Approval Lane - Gateway 2 (Valid?)
+    - id: element_7
+      type: exclusiveGateway
+      name: Valid?
+      x: 640
+      y: 400
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        documentation: "Decision point for validation"
+
+    # Main Process Lane - Task 3
+    - id: element_8
+      type: task
+      name: Generate Report
+      x: 750
+      y: 150
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: "Generate final report"
+
+    # Approval Lane - Approval Task 3
+    - id: element_9
+      type: task
+      name: Final Approval
+      x: 750
+      y: 400
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        documentation: "Final approval of generated report"
+
+    # Approval Lane - Gateway 3 (Final Approved?)
+    - id: element_10
+      type: exclusiveGateway
+      name: Final OK?
+      x: 890
+      y: 400
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        documentation: "Final approval decision point"
+
+    # Main Process Lane - Task 4
+    - id: element_11
+      type: task
+      name: Publish Results
+      x: 1000
+      y: 150
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: "Publish approved results"
+
+    # Main Process Lane - End Event
+    - id: element_12
+      type: endEvent
+      name: End Process
+      x: 1150
+      y: 150
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: "Process completed successfully"
+
+    # Rejection handling task
+    - id: element_13
+      type: task
+      name: Handle Rejection
+      x: 390
+      y: 520
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        documentation: "Handle rejected requests"
+
+    # Rejection End Event
+    - id: element_14
+      type: endEvent
+      name: Rejected
+      x: 530
+      y: 520
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        documentation: "Process ended due to rejection"
+
+  connections:
+    # Main flow in Main Process Lane
+    - id: conn_1
+      type: sequenceFlow
+      name: ""
+      from: element_1
+      to: element_2
+
+    # Submit Request to Review Request (cross-lane)
+    - id: conn_2
+      type: sequenceFlow
+      name: "needs approval"
+      from: element_2
+      to: element_3
+
+    # Review Request to Approval Gateway
+    - id: conn_3
+      type: sequenceFlow
+      name: ""
+      from: element_3
+      to: element_4
+
+    # Approved path - back to Main Lane
+    - id: conn_4
+      type: sequenceFlow
+      name: "approved"
+      from: element_4
+      to: element_5
+
+    # Rejected path
+    - id: conn_5
+      type: sequenceFlow
+      name: "rejected"
+      from: element_4
+      to: element_13
+
+    # Handle Rejection to End
+    - id: conn_6
+      type: sequenceFlow
+      name: ""
+      from: element_13
+      to: element_14
+
+    # Process Data to Validation (cross-lane)
+    - id: conn_7
+      type: sequenceFlow
+      name: "needs validation"
+      from: element_5
+      to: element_6
+
+    # Validate Processing to Gateway
+    - id: conn_8
+      type: sequenceFlow
+      name: ""
+      from: element_6
+      to: element_7
+
+    # Valid path - back to Main Lane
+    - id: conn_9
+      type: sequenceFlow
+      name: "valid"
+      from: element_7
+      to: element_8
+
+    # Invalid path - back to rejection
+    - id: conn_10
+      type: sequenceFlow
+      name: "invalid"
+      from: element_7
+      to: element_13
+
+    # Generate Report to Final Approval (cross-lane)
+    - id: conn_11
+      type: sequenceFlow
+      name: "needs final approval"
+      from: element_8
+      to: element_9
+
+    # Final Approval to Gateway
+    - id: conn_12
+      type: sequenceFlow
+      name: ""
+      from: element_9
+      to: element_10
+
+    # Final Approved path - back to Main Lane
+    - id: conn_13
+      type: sequenceFlow
+      name: "approved"
+      from: element_10
+      to: element_11
+
+    # Final Rejected path
+    - id: conn_14
+      type: sequenceFlow
+      name: "rejected"
+      from: element_10
+      to: element_13
+
+    # Publish Results to End
+    - id: conn_15
+      type: sequenceFlow
+      name: ""
+      from: element_11
+      to: element_12

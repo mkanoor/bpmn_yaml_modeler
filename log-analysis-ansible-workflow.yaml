@@ -1,0 +1,603 @@
+process:
+  name: Log Analysis to Ansible Playbook Workflow
+  id: log-analysis-ansible
+  description: Analyze logs with AI, get approval, generate Ansible playbook, and display results
+
+  elements:
+    # Start Event
+    - id: element_1
+      type: startEvent
+      name: Start
+      x: 100
+      y: 300
+
+    # Upload Log File (Script Task)
+    - id: element_2
+      type: scriptTask
+      name: Prepare Log Analysis
+      x: 250
+      y: 300
+      properties:
+        scriptFormat: Python
+        script: |
+          # Prepare log analysis context
+          # Check if log file content was provided in execution context
+
+          # Use uploaded/provided log content if available, otherwise use sample
+          if 'logFileContent' not in context or not context['logFileContent']:
+              # Sample log content for demonstration
+              context['logFileName'] = context.get('logFileName', 'application.log')
+              sample_logs = [
+                  '2024-01-15 10:23:45 ERROR [DatabaseService] Connection timeout to database server db01.prod.local:5432',
+                  '2024-01-15 10:23:46 ERROR [DatabaseService] Failed to execute query: Connection refused',
+                  '2024-01-15 10:24:12 CRITICAL [HealthCheck] Database health check failed - marking service as unhealthy',
+                  '2024-01-15 10:25:33 WARNING [LoadBalancer] Removing server web-01 from pool due to failed health checks',
+                  '2024-01-15 10:26:01 ERROR [AuthService] Redis cache connection timeout - falling back to database',
+                  '2024-01-15 10:27:15 ERROR [AuthService] Performance degradation detected - response time > 5s',
+                  '2024-01-15 10:28:42 CRITICAL [SystemMonitor] Memory usage at 95% - approaching OOM condition',
+                  '2024-01-15 10:29:33 ERROR [DiskMonitor] /var/log partition at 92% capacity',
+                  '2024-01-15 10:30:11 WARNING [BackupService] Backup job delayed due to disk space constraints'
+              ]
+              context['logFileContent'] = '\n'.join(sample_logs)
+              context['logSource'] = 'sample'
+          else:
+              # Use provided log content
+              context['logFileName'] = context.get('logFileName', 'uploaded.log')
+              context['logSource'] = 'uploaded'
+
+          # Generate analysis request ID
+          context['analysisId'] = f"ANALYSIS-{random.randint(1000, 9999)}"
+          context['analysisTimestamp'] = datetime.now(timezone.utc).isoformat()
+
+          # Determine severity based on log content
+          log_content_lower = context['logFileContent'].lower()
+          if 'critical' in log_content_lower or 'fatal' in log_content_lower:
+              context['severity'] = 'CRITICAL'
+          elif 'error' in log_content_lower:
+              context['severity'] = 'HIGH'
+          elif 'warning' in log_content_lower or 'warn' in log_content_lower:
+              context['severity'] = 'MEDIUM'
+          else:
+              context['severity'] = 'LOW'
+
+          result = {
+              'analysisId': context['analysisId'],
+              'logFile': context['logFileName'],
+              'logSource': context['logSource'],
+              'ready': True
+          }
+        resultVariable: prepResult
+
+    # AI Log Analysis (Agentic Task)
+    - id: element_3
+      type: agenticTask
+      name: AI Log Analysis
+      x: 450
+      y: 300
+      properties:
+        agentType: log-analyzer
+        model: anthropic/claude-3.5-sonnet
+        confidenceThreshold: 0.85
+        maxRetries: 2
+        custom:
+          systemPrompt: |
+            You are an expert DevOps engineer and system administrator specializing in log analysis.
+            Analyze the provided log file and identify:
+            1. Critical errors and their root causes
+            2. System performance issues
+            3. Security concerns
+            4. Infrastructure problems
+            5. Recommended remediation actions
+
+            Provide a structured analysis with:
+            - Summary of issues found
+            - Severity level (CRITICAL, HIGH, MEDIUM, LOW)
+            - Root cause analysis
+            - Recommended actions
+            - Priority order for fixes
+
+            Format your response as a clear, actionable report.
+          mcpTools:
+            - log-parser
+            - grep-search
+            - pattern-matcher
+
+    # Extract Analysis Results
+    - id: element_3b
+      type: scriptTask
+      name: Extract Analysis Results
+      x: 600
+      y: 300
+      properties:
+        scriptFormat: Python
+        script: |
+          # Flatten the analysis result for email template
+          analysis_result = context.get('element_3_result', {})
+
+          # Extract individual fields
+          context['analysis_summary'] = analysis_result.get('analysis', 'No analysis available')
+          context['analysis_log_size'] = analysis_result.get('log_size', 0)
+          context['analysis_model'] = analysis_result.get('model_used', 'Unknown')
+          context['analysis_confidence'] = analysis_result.get('confidence', 0)
+          context['analysis_tools'] = ', '.join(analysis_result.get('tools_used', []))
+
+          # Format findings as readable text
+          findings = analysis_result.get('findings', [])
+          if isinstance(findings, list):
+              context['analysis_findings'] = '\n'.join(f"{i+1}. {finding}" for i, finding in enumerate(findings))
+          else:
+              context['analysis_findings'] = str(findings)
+
+          result = {'extracted': True}
+        resultVariable: extractResult
+
+    # Send Analysis Report for Approval
+    - id: element_4
+      type: sendTask
+      name: Send Analysis Report for Approval
+      x: 850
+      y: 300
+      properties:
+        messageType: Email
+        to: ""
+        subject: "[Action Required] Log Analysis Report - ${analysisId}"
+        messageBody: |
+          <html>
+          <head>
+            <style>
+              body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+              .container { max-width: 800px; margin: 0 auto; padding: 20px; }
+              .header { background: #2c3e50; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
+              .content { background: #f9f9f9; padding: 20px; border: 1px solid #ddd; }
+              .severity-badge { display: inline-block; padding: 5px 15px; border-radius: 3px; font-weight: bold; }
+              .severity-high { background: #e74c3c; color: white; }
+              .severity-critical { background: #c0392b; color: white; }
+              .details { background: white; padding: 20px; border-left: 4px solid #e74c3c; margin: 20px 0; }
+              .findings { background: #ecf0f1; padding: 15px; margin: 15px 0; border-radius: 5px; }
+              .finding-item { margin: 10px 0; padding: 10px; background: white; border-left: 3px solid #3498db; }
+              .footer { background: #34495e; color: white; padding: 15px; text-align: center; border-radius: 0 0 5px 5px; font-size: 12px; }
+              pre { background: #2c3e50; color: #ecf0f1; padding: 15px; border-radius: 5px; overflow-x: auto; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <div class="header">
+                <h1>🔍 Log Analysis Report</h1>
+                <p style="margin: 0;">AI-Powered System Analysis Complete</p>
+              </div>
+
+              <div class="content">
+                <h2>Analysis Summary</h2>
+
+                <div class="details">
+                  <p><strong>Analysis ID:</strong> ${analysisId}</p>
+                  <p><strong>Log File:</strong> ${logFileName}</p>
+                  <p><strong>Timestamp:</strong> ${analysisTimestamp}</p>
+                  <p><strong>Severity:</strong> <span class="severity-badge severity-${severity}">${severity}</span></p>
+                  <p><strong>Log Size:</strong> ${analysis_log_size} bytes</p>
+                  <p><strong>AI Model:</strong> ${analysis_model}</p>
+                  <p><strong>Confidence:</strong> ${analysis_confidence}</p>
+                </div>
+
+                <h3>AI Analysis Summary</h3>
+                <div class="findings">
+                  <p>${analysis_summary}</p>
+                </div>
+
+                <h3>Tools Used</h3>
+                <div class="findings">
+                  <p>${analysis_tools}</p>
+                </div>
+
+                <h3>Detailed Findings</h3>
+                <div class="findings">
+                  <pre>${analysis_findings}</pre>
+                </div>
+
+                <h3>Next Steps</h3>
+                <p>If you approve this analysis, an Ansible playbook will be automatically generated to remediate the identified issues.</p>
+
+                <p><strong>⚠️ Please review the findings carefully before approving.</strong></p>
+              </div>
+
+              <div class="footer">
+                <p style="margin: 0;">BPMN Workflow Executor - Log Analysis Workflow</p>
+                <p style="margin: 5px 0 0 0;">Analysis ID: ${analysisId}</p>
+              </div>
+            </div>
+          </body>
+          </html>
+        useGmail: true
+        htmlFormat: true
+        includeApprovalLinks: true
+        approvalMessageRef: analysisApproval
+        approvalCorrelationKey: ${analysisId}
+
+    # Wait for Approval
+    - id: element_5
+      type: receiveTask
+      name: Wait for Approval Decision
+      x: 1000
+      y: 300
+      properties:
+        messageRef: analysisApproval
+        correlationKey: ${analysisId}
+        timeout: 7200000
+        useWebhook: true
+
+    # Log Decision
+    - id: element_6
+      type: scriptTask
+      name: Log Approval Decision
+      x: 1250
+      y: 300
+      properties:
+        scriptFormat: Python
+        script: |
+          # Log the approval decision
+          decision = context.get('decision', 'unknown')
+          approver_method = context.get('method', 'unknown')
+
+          context['approvalDecision'] = decision
+          context['approvalTimestamp'] = datetime.utcnow().isoformat()
+          context['approverMethod'] = approver_method
+
+          result = {
+              'decision': decision,
+              'timestamp': context['approvalTimestamp'],
+              'analysisId': context.get('analysisId')
+          }
+        resultVariable: approvalResult
+
+    # Decision Gateway
+    - id: element_7
+      type: exclusiveGateway
+      name: Approved?
+      x: 1500
+      y: 300
+
+    # APPROVED PATH - Generate Ansible Playbook
+    - id: element_8
+      type: agenticTask
+      name: Generate Ansible Playbook
+      x: 1700
+      y: 100
+      properties:
+        agentType: ansible-generator
+        model: anthropic/claude-3.5-sonnet
+        confidenceThreshold: 0.90
+        maxRetries: 3
+        custom:
+          systemPrompt: |
+            You are an expert Ansible automation engineer and DevOps specialist.
+            Based on the log analysis findings, generate a comprehensive Ansible playbook to:
+            1. Remediate identified issues
+            2. Implement preventive measures
+            3. Set up monitoring and alerting
+            4. Apply security hardening where needed
+
+            The playbook should:
+            - Follow Ansible best practices
+            - Be idempotent and safe to run multiple times
+            - Include proper error handling
+            - Have clear comments and documentation
+            - Use variables for configuration
+            - Include tasks for verification
+
+            Generate production-ready YAML that can be executed immediately.
+            Include role structure if complex remediation is needed.
+          mcpTools:
+            - yaml-validator
+            - ansible-lint
+            - template-generator
+
+    # Extract Playbook Results
+    - id: element_9
+      type: scriptTask
+      name: Extract Playbook Results
+      x: 2000
+      y: 100
+      properties:
+        scriptFormat: Python
+        script: |
+          # Flatten the playbook generation result for email template
+          playbook_result = context.get('element_8_result', {})
+
+          # Extract individual fields
+          context['playbook_summary'] = playbook_result.get('analysis', 'Playbook generated')
+          context['playbook_model'] = playbook_result.get('model_used', 'Unknown')
+          context['playbook_confidence'] = playbook_result.get('confidence', 0)
+          context['playbook_tools'] = ', '.join(playbook_result.get('tools_used', []))
+
+          # Extract the actual playbook YAML
+          findings = playbook_result.get('findings', [])
+          if isinstance(findings, list):
+              # Join all findings as the playbook
+              context['playbook_yaml'] = '\n\n'.join(findings)
+          else:
+              context['playbook_yaml'] = str(findings)
+
+          # Count findings
+          if isinstance(findings, list):
+              context['playbook_findings_count'] = len(findings)
+          else:
+              context['playbook_findings_count'] = 1
+
+          result = {'extracted': True}
+        resultVariable: playbookExtractResult
+
+    # Send Playbook Email
+    - id: element_10
+      type: sendTask
+      name: Send Playbook Report
+      x: 2300
+      y: 100
+      properties:
+        messageType: Email
+        to: ""
+        subject: "✅ Ansible Playbook Generated - ${analysisId}"
+        messageBody: |
+          <html>
+          <head>
+            <style>
+              body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+              .container { max-width: 900px; margin: 0 auto; padding: 20px; }
+              .header { background: #27ae60; color: white; padding: 30px; text-align: center; border-radius: 5px 5px 0 0; }
+              .content { background: #f9f9f9; padding: 30px; border: 1px solid #ddd; }
+              .playbook-box { background: #2c3e50; color: #ecf0f1; padding: 20px; border-radius: 5px; overflow-x: auto; margin: 20px 0; }
+              .details { background: white; padding: 20px; border-left: 4px solid #27ae60; margin: 20px 0; }
+              .success-badge { background: #27ae60; color: white; padding: 8px 15px; border-radius: 5px; display: inline-block; }
+              .footer { background: #34495e; color: white; padding: 15px; text-align: center; border-radius: 0 0 5px 5px; }
+              .metric { display: inline-block; margin: 10px 20px; }
+              .metric-label { font-size: 12px; color: #7f8c8d; }
+              .metric-value { font-size: 24px; font-weight: bold; color: #27ae60; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <div class="header">
+                <h1>✅ Ansible Playbook Generated</h1>
+                <p style="margin: 0; font-size: 18px;">AI-Generated Infrastructure Remediation</p>
+              </div>
+
+              <div class="content">
+                <div class="success-badge">PLAYBOOK READY</div>
+
+                <div class="details">
+                  <h3>Generation Details</h3>
+                  <p><strong>Analysis ID:</strong> ${analysisId}</p>
+                  <p><strong>Source Log:</strong> ${logFileName}</p>
+                  <p><strong>Approved By:</strong> ${approverMethod}</p>
+                  <p><strong>Approval Time:</strong> ${approvalTimestamp}</p>
+                  <p><strong>AI Model:</strong> ${playbook_model}</p>
+                  <p><strong>Generation Confidence:</strong> ${playbook_confidence}</p>
+                </div>
+
+                <div style="margin: 30px 0;">
+                  <div class="metric">
+                    <div class="metric-label">Log Size</div>
+                    <div class="metric-value">${analysis_log_size}</div>
+                  </div>
+                  <div class="metric">
+                    <div class="metric-label">AI Confidence</div>
+                    <div class="metric-value">${playbook_confidence}</div>
+                  </div>
+                  <div class="metric">
+                    <div class="metric-label">Tools Used</div>
+                    <div class="metric-value">${playbook_tools}</div>
+                  </div>
+                </div>
+
+                <h3>Original Analysis Summary</h3>
+                <div class="details">
+                  <p>${analysis_summary}</p>
+                </div>
+
+                <h3>Playbook Generation</h3>
+                <div class="details">
+                  <p>${playbook_summary}</p>
+                </div>
+
+                <h3>Generated Ansible Playbook</h3>
+                <div class="playbook-box">
+                  <pre>${playbook_yaml}</pre>
+                </div>
+
+                <div style="background: #e8f5e9; padding: 20px; border-left: 4px solid #27ae60; margin: 30px 0;">
+                  <h3 style="margin-top: 0; color: #27ae60;">📋 Next Steps</h3>
+                  <ol style="margin: 0;">
+                    <li>Review the generated playbook carefully</li>
+                    <li>Test in a staging environment first</li>
+                    <li>Adjust variables in vars section as needed</li>
+                    <li>Run with: <code>ansible-playbook -i inventory playbook.yml</code></li>
+                    <li>Monitor execution and verify remediation</li>
+                  </ol>
+                </div>
+
+                <div style="background: #fff3cd; padding: 15px; border-left: 4px solid #ffc107; margin: 20px 0;">
+                  <p style="margin: 0;"><strong>⚠️ Important:</strong> This playbook was AI-generated based on log analysis.
+                  Always review and test in a non-production environment before deploying to production systems.</p>
+                </div>
+              </div>
+
+              <div class="footer">
+                <p style="margin: 0;">BPMN Workflow Executor - Ansible Automation</p>
+                <p style="margin: 5px 0 0 0;">Analysis ID: ${analysisId}</p>
+              </div>
+            </div>
+          </body>
+          </html>
+        useGmail: true
+        htmlFormat: true
+
+    # Success End Event
+    - id: element_11
+      type: endEvent
+      name: Playbook Generated
+      x: 2600
+      y: 100
+
+    # DENIED PATH - Send Rejection Notification
+    - id: element_12
+      type: sendTask
+      name: Send Rejection Notification
+      x: 1700
+      y: 500
+      properties:
+        messageType: Email
+        to: ""
+        subject: "❌ Analysis Rejected - ${analysisId}"
+        messageBody: |
+          <html>
+          <head>
+            <style>
+              body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+              .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+              .header { background: #e74c3c; color: white; padding: 30px; text-align: center; border-radius: 5px 5px 0 0; }
+              .content { background: #f9f9f9; padding: 30px; border: 1px solid #ddd; }
+              .details { background: white; padding: 20px; border-left: 4px solid #e74c3c; margin: 20px 0; }
+              .footer { background: #34495e; color: white; padding: 15px; text-align: center; border-radius: 0 0 5px 5px; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <div class="header">
+                <h1>❌ Analysis Rejected</h1>
+                <p style="margin: 0;">Log Analysis Not Approved</p>
+              </div>
+
+              <div class="content">
+                <div class="details">
+                  <p><strong>Analysis ID:</strong> ${analysisId}</p>
+                  <p><strong>Log File:</strong> ${logFileName}</p>
+                  <p><strong>Decision Method:</strong> ${approverMethod}</p>
+                  <p><strong>Decision Time:</strong> ${approvalTimestamp}</p>
+                </div>
+
+                <div style="background: #ffebee; padding: 15px; border-left: 4px solid #e74c3c; margin: 20px 0;">
+                  <p style="margin: 0;"><strong>Status:</strong> The log analysis was rejected and no Ansible playbook will be generated.</p>
+                </div>
+
+                <h3>Original Analysis Summary</h3>
+                <p>${analysis_summary}</p>
+
+                <h3>Detailed Findings</h3>
+                <pre style="background: #f5f5f5; padding: 15px; border-radius: 5px; overflow-x: auto;">${analysis_findings}</pre>
+
+                <p style="color: #7f8c8d; font-size: 14px; margin-top: 30px;">
+                  If you believe this was an error, you can re-run the analysis workflow with updated parameters.
+                </p>
+              </div>
+
+              <div class="footer">
+                <p style="margin: 0;">BPMN Workflow Executor - Log Analysis Workflow</p>
+              </div>
+            </div>
+          </body>
+          </html>
+        useGmail: true
+        htmlFormat: true
+
+    # Rejected End Event
+    - id: element_13
+      type: endEvent
+      name: Analysis Rejected
+      x: 2000
+      y: 500
+
+  # Connections
+  connections:
+    - id: conn_1
+      type: sequenceFlow
+      name: ""
+      from: element_1
+      to: element_2
+      properties: {}
+
+    - id: conn_2
+      type: sequenceFlow
+      name: ""
+      from: element_2
+      to: element_3
+      properties: {}
+
+    - id: conn_3
+      type: sequenceFlow
+      name: ""
+      from: element_3
+      to: element_3b
+      properties: {}
+
+    - id: conn_3b
+      type: sequenceFlow
+      name: ""
+      from: element_3b
+      to: element_4
+      properties: {}
+
+    - id: conn_4
+      type: sequenceFlow
+      name: ""
+      from: element_4
+      to: element_5
+      properties: {}
+
+    - id: conn_5
+      type: sequenceFlow
+      name: ""
+      from: element_5
+      to: element_6
+      properties: {}
+
+    - id: conn_6
+      type: sequenceFlow
+      name: ""
+      from: element_6
+      to: element_7
+      properties: {}
+
+    # Approved path
+    - id: conn_7
+      type: sequenceFlow
+      name: Approved
+      from: element_7
+      to: element_8
+      properties:
+        condition: ${decision} == "approved"
+
+    - id: conn_8
+      type: sequenceFlow
+      name: ""
+      from: element_8
+      to: element_9
+      properties: {}
+
+    - id: conn_9
+      type: sequenceFlow
+      name: ""
+      from: element_9
+      to: element_10
+      properties: {}
+
+    - id: conn_10
+      type: sequenceFlow
+      name: ""
+      from: element_10
+      to: element_11
+      properties: {}
+
+    # Denied path
+    - id: conn_11
+      type: sequenceFlow
+      name: Denied
+      from: element_7
+      to: element_12
+      properties:
+        condition: ""
+
+    - id: conn_12
+      type: sequenceFlow
+      name: ""
+      from: element_12
+      to: element_13
+      properties: {}

@@ -1,0 +1,39 @@
+# BPMN Workflow Execution Engine - Python Dependencies
+
+# Core Framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+websockets==12.0
+pydantic==2.5.0
+python-multipart==0.0.6
+
+# Async Support
+aiohttp==3.9.1
+httpx==0.25.2
+
+# YAML Processing
+pyyaml==6.0.1
+
+# Utilities
+python-dateutil==2.8.2
+python-dotenv==1.0.0
+
+# Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+
+# Optional: Database (uncomment if needed)
+# asyncpg==0.29.0
+# sqlalchemy==1.4.50
+
+# Optional: Message Queue (uncomment if needed)
+# redis==5.0.1
+
+# AI/ML Integration
+openai==1.12.0  # Works with OpenRouter
+
+# Email Integration - Gmail API
+google-api-python-client==2.111.0
+google-auth==2.25.2
+google-auth-oauthlib==1.2.0
+google-auth-httplib2==0.2.0

@@ -1,0 +1,378 @@
+process:
+  name: Email Approval Test Workflow
+  id: email-approval-test
+  description: Test workflow to demonstrate email-based approvals with webhook callbacks
+
+  elements:
+    # Start Event
+    - id: element_1
+      type: startEvent
+      name: Start
+      x: 100
+      y: 200
+
+    # Create Test Request
+    - id: element_2
+      type: scriptTask
+      name: Create Test Request
+      x: 250
+      y: 200
+      properties:
+        scriptFormat: Python
+        script: |
+          # Generate unique request ID (random and datetime are pre-imported)
+          requestId = f"REQ-{random.randint(1000, 9999)}"
+
+          # Store in context
+          context['requestId'] = requestId
+          context['amount'] = 250.00
+          context['requestor'] = 'John Doe'
+          context['department'] = 'Engineering'
+          context['purpose'] = 'New laptop purchase'
+          context['createdAt'] = datetime.utcnow().isoformat()
+
+          # Result
+          result = {
+              'requestId': requestId,
+              'created': True
+          }
+        resultVariable: requestResult
+
+    # Send Approval Email
+    - id: element_3
+      type: sendTask
+      name: Send Approval Email
+      x: 450
+      y: 200
+      properties:
+        messageType: Email
+        to: ""
+        subject: "[Action Required] Approval Request - ${requestId}"
+        messageBody: |
+          <html>
+          <head>
+            <style>
+              body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+              .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+              .header { background: #4CAF50; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
+              .content { background: #f9f9f9; padding: 20px; border: 1px solid #ddd; }
+              .details { background: white; padding: 15px; border-left: 4px solid #4CAF50; margin: 20px 0; }
+              .detail-row { display: flex; margin: 10px 0; }
+              .detail-label { font-weight: bold; width: 150px; }
+              .detail-value { flex: 1; }
+              .footer { background: #f5f5f5; padding: 15px; text-align: center; border-radius: 0 0 5px 5px; font-size: 12px; color: #666; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <div class="header">
+                <h1>🔔 Approval Request</h1>
+                <p style="margin: 0;">Action Required</p>
+              </div>
+
+              <div class="content">
+                <h2>Purchase Approval Needed</h2>
+                <p>A new purchase request requires your approval. Please review the details below and make your decision.</p>
+
+                <div class="details">
+                  <div class="detail-row">
+                    <div class="detail-label">Request ID:</div>
+                    <div class="detail-value"><strong>${requestId}</strong></div>
+                  </div>
+                  <div class="detail-row">
+                    <div class="detail-label">Amount:</div>
+                    <div class="detail-value"><strong style="color: #4CAF50; font-size: 18px;">$${amount}</strong></div>
+                  </div>
+                  <div class="detail-row">
+                    <div class="detail-label">Requestor:</div>
+                    <div class="detail-value">${requestor}</div>
+                  </div>
+                  <div class="detail-row">
+                    <div class="detail-label">Department:</div>
+                    <div class="detail-value">${department}</div>
+                  </div>
+                  <div class="detail-row">
+                    <div class="detail-label">Purpose:</div>
+                    <div class="detail-value">${purpose}</div>
+                  </div>
+                </div>
+
+                <p style="margin-top: 30px; font-size: 14px; color: #666;">
+                  <strong>Note:</strong> This is a test workflow to demonstrate email-based approvals.
+                  Click one of the buttons below to see the workflow resume automatically!
+                </p>
+              </div>
+
+              <div class="footer">
+                <p style="margin: 0;">BPMN Workflow Executor - Email Approval Test</p>
+                <p style="margin: 5px 0 0 0;">Generated at ${createdAt}</p>
+              </div>
+            </div>
+          </body>
+          </html>
+        useGmail: true
+        htmlFormat: true
+        includeApprovalLinks: true
+        approvalMessageRef: purchaseApproval
+        approvalCorrelationKey: ${requestId}
+
+    # Wait for Approval Decision
+    - id: element_4
+      type: receiveTask
+      name: Wait for Approval Decision
+      x: 700
+      y: 200
+      properties:
+        messageRef: purchaseApproval
+        correlationKey: ${requestId}
+        timeout: 3600000
+        useWebhook: true
+
+    # Log Received Decision
+    - id: element_5
+      type: scriptTask
+      name: Log Decision
+      x: 900
+      y: 200
+      properties:
+        scriptFormat: Python
+        script: |
+          # Log the decision (datetime is pre-imported)
+          decision = context.get('decision', 'unknown')
+          method = context.get('method', 'unknown')
+          timestamp = context.get('timestamp', datetime.utcnow().isoformat())
+
+          context['decisionLogged'] = True
+          context['decisionTimestamp'] = timestamp
+
+          result = {
+              'decision': decision,
+              'method': method,
+              'timestamp': timestamp,
+              'requestId': context.get('requestId')
+          }
+        resultVariable: decisionResult
+
+    # Decision Gateway
+    - id: element_6
+      type: exclusiveGateway
+      name: Approved?
+      x: 1100
+      y: 200
+
+    # APPROVED PATH
+    - id: element_7
+      type: serviceTask
+      name: Process Approved Request
+      x: 1300
+      y: 80
+      properties:
+        implementation: Expression
+        expression: Approved - Processing purchase for ${requestId}
+        resultVariable: processingResult
+
+    - id: element_8
+      type: sendTask
+      name: Send Approval Confirmation
+      x: 1500
+      y: 80
+      properties:
+        messageType: Email
+        to: ""
+        subject: "✅ Approved: ${requestId} - Purchase Approved"
+        messageBody: |
+          <html>
+          <body style="font-family: Arial, sans-serif; padding: 20px;">
+            <div style="max-width: 600px; margin: 0 auto; border: 2px solid #4CAF50; border-radius: 10px; overflow: hidden;">
+              <div style="background: #4CAF50; color: white; padding: 30px; text-align: center;">
+                <h1 style="margin: 0; font-size: 32px;">✅ APPROVED</h1>
+                <p style="margin: 10px 0 0 0; font-size: 18px;">Your request has been approved!</p>
+              </div>
+
+              <div style="padding: 30px; background: #f9f9f9;">
+                <h2 style="color: #4CAF50; margin-top: 0;">Purchase Request Approved</h2>
+
+                <div style="background: white; padding: 20px; border-radius: 5px; margin: 20px 0;">
+                  <p style="margin: 10px 0;"><strong>Request ID:</strong> ${requestId}</p>
+                  <p style="margin: 10px 0;"><strong>Amount:</strong> $${amount}</p>
+                  <p style="margin: 10px 0;"><strong>Purpose:</strong> ${purpose}</p>
+                  <p style="margin: 10px 0;"><strong>Decision Method:</strong> ${method}</p>
+                  <p style="margin: 10px 0;"><strong>Decided At:</strong> ${decisionTimestamp}</p>
+                </div>
+
+                <div style="background: #e8f5e9; padding: 15px; border-left: 4px solid #4CAF50; margin: 20px 0;">
+                  <p style="margin: 0; color: #2e7d32;">
+                    <strong>✓ Next Steps:</strong> Your purchase request will be processed within 1-2 business days.
+                  </p>
+                </div>
+
+                <p style="color: #666; font-size: 14px; margin-top: 30px;">
+                  This is a test workflow demonstrating email-based approvals with webhook callbacks.
+                  The workflow successfully received your approval via email!
+                </p>
+              </div>
+
+              <div style="background: #f5f5f5; padding: 15px; text-align: center; font-size: 12px; color: #666;">
+                <p style="margin: 0;">BPMN Workflow Executor - Test Workflow</p>
+              </div>
+            </div>
+          </body>
+          </html>
+        useGmail: true
+        htmlFormat: true
+
+    - id: element_9
+      type: endEvent
+      name: Request Approved
+      x: 1700
+      y: 80
+
+    # DENIED PATH
+    - id: element_10
+      type: serviceTask
+      name: Cancel Request
+      x: 1300
+      y: 320
+      properties:
+        implementation: Expression
+        expression: Denied - Canceling request ${requestId}
+        resultVariable: cancellationResult
+
+    - id: element_11
+      type: sendTask
+      name: Send Denial Confirmation
+      x: 1500
+      y: 320
+      properties:
+        messageType: Email
+        to: ""
+        subject: "❌ Denied: ${requestId} - Request Not Approved"
+        messageBody: |
+          <html>
+          <body style="font-family: Arial, sans-serif; padding: 20px;">
+            <div style="max-width: 600px; margin: 0 auto; border: 2px solid #f44336; border-radius: 10px; overflow: hidden;">
+              <div style="background: #f44336; color: white; padding: 30px; text-align: center;">
+                <h1 style="margin: 0; font-size: 32px;">❌ DENIED</h1>
+                <p style="margin: 10px 0 0 0; font-size: 18px;">Request was not approved</p>
+              </div>
+
+              <div style="padding: 30px; background: #f9f9f9;">
+                <h2 style="color: #f44336; margin-top: 0;">Purchase Request Denied</h2>
+
+                <div style="background: white; padding: 20px; border-radius: 5px; margin: 20px 0;">
+                  <p style="margin: 10px 0;"><strong>Request ID:</strong> ${requestId}</p>
+                  <p style="margin: 10px 0;"><strong>Amount:</strong> $${amount}</p>
+                  <p style="margin: 10px 0;"><strong>Purpose:</strong> ${purpose}</p>
+                  <p style="margin: 10px 0;"><strong>Decision Method:</strong> ${method}</p>
+                  <p style="margin: 10px 0;"><strong>Decided At:</strong> ${decisionTimestamp}</p>
+                </div>
+
+                <div style="background: #ffebee; padding: 15px; border-left: 4px solid #f44336; margin: 20px 0;">
+                  <p style="margin: 0; color: #c62828;">
+                    <strong>✗ Status:</strong> This request has been denied and will not be processed.
+                  </p>
+                </div>
+
+                <p style="color: #666; font-size: 14px; margin-top: 30px;">
+                  This is a test workflow demonstrating email-based approvals with webhook callbacks.
+                  The workflow successfully received your denial via email!
+                </p>
+              </div>
+
+              <div style="background: #f5f5f5; padding: 15px; text-align: center; font-size: 12px; color: #666;">
+                <p style="margin: 0;">BPMN Workflow Executor - Test Workflow</p>
+              </div>
+            </div>
+          </body>
+          </html>
+        useGmail: true
+        htmlFormat: true
+
+    - id: element_12
+      type: endEvent
+      name: Request Denied
+      x: 1700
+      y: 320
+
+  # Connections
+  connections:
+    - id: conn_1
+      type: sequenceFlow
+      name: ""
+      from: element_1
+      to: element_2
+      properties: {}
+
+    - id: conn_2
+      type: sequenceFlow
+      name: ""
+      from: element_2
+      to: element_3
+      properties: {}
+
+    - id: conn_3
+      type: sequenceFlow
+      name: ""
+      from: element_3
+      to: element_4
+      properties: {}
+
+    - id: conn_4
+      type: sequenceFlow
+      name: ""
+      from: element_4
+      to: element_5
+      properties: {}
+
+    - id: conn_5
+      type: sequenceFlow
+      name: ""
+      from: element_5
+      to: element_6
+      properties: {}
+
+    # Approved path
+    - id: conn_6
+      type: sequenceFlow
+      name: Approved
+      from: element_6
+      to: element_7
+      properties:
+        condition: ${decision} == "approved"
+
+    - id: conn_7
+      type: sequenceFlow
+      name: ""
+      from: element_7
+      to: element_8
+      properties: {}
+
+    - id: conn_8
+      type: sequenceFlow
+      name: ""
+      from: element_8
+      to: element_9
+      properties: {}
+
+    # Denied path
+    - id: conn_9
+      type: sequenceFlow
+      name: Denied
+      from: element_6
+      to: element_10
+      properties:
+        condition: ""
+
+    - id: conn_10
+      type: sequenceFlow
+      name: ""
+      from: element_10
+      to: element_11
+      properties: {}
+
+    - id: conn_11
+      type: sequenceFlow
+      name: ""
+      from: element_11
+      to: element_12
+      properties: {}
