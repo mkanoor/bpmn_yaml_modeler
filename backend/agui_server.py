@@ -225,8 +225,14 @@ class AGUIServer:
 
     async def send_task_cancelled(self, element_id: str, reason: str = "Another path completed first"):
         """Send task cancellation event (e.g., for inclusive gateway merge)"""
+        logger.info(f"📤 SENDING task.cancelled event for element: {element_id}")
+        logger.info(f"   Reason: {reason}")
+        logger.info(f"   Connected clients: {len(self.clients)}")
+
         await self.send_update({
             'type': 'task.cancelled',
             'elementId': element_id,
             'reason': reason
         })
+
+        logger.info(f"✅ task.cancelled event sent successfully")

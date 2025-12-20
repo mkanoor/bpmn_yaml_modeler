@@ -90,6 +90,13 @@ class AGUIClient {
         const { type } = message;
         console.log('📨 Received:', type, message);
 
+        // Special logging for cancellation messages
+        if (type === 'task.cancelled') {
+            console.log('🚫🚫🚫 TASK CANCELLED MESSAGE RECEIVED 🚫🚫🚫');
+            console.log('   Element ID:', message.elementId);
+            console.log('   Reason:', message.reason);
+        }
+
         // Route to appropriate handler
         switch(type) {
             case 'workflow.started':
@@ -452,17 +459,27 @@ class AGUIClient {
     }
 
     handleTaskCancelled(message) {
-        console.log('🚫 Task cancelled:', message.elementId, message.reason);
+        console.log('🚫 handleTaskCancelled called');
+        console.log('   Element ID:', message.elementId);
+        console.log('   Reason:', message.reason);
 
         // Find and close the approval modal for this task
-        const modal = document.querySelector(`.approval-modal[data-task-id="${message.elementId}"]`);
+        const selector = `.approval-modal[data-task-id="${message.elementId}"]`;
+        console.log('   Looking for modal with selector:', selector);
+
+        const modal = document.querySelector(selector);
+        console.log('   Modal found:', modal);
+
         if (modal) {
+            console.log('✅ CLOSING modal for task:', message.elementId);
+
             // Add fade-out animation
             modal.style.opacity = '0';
             modal.style.transition = 'opacity 0.3s ease-out';
 
             setTimeout(() => {
                 modal.remove();
+                console.log('✅ Modal removed from DOM');
             }, 300);
 
             // Show notification explaining why it was cancelled
@@ -471,6 +488,9 @@ class AGUIClient {
                 message.reason || 'Another approval path completed first',
                 'info'
             );
+        } else {
+            console.log('❌ Modal NOT found for task:', message.elementId);
+            console.log('   All modals in DOM:', document.querySelectorAll('.approval-modal'));
         }
 
         // Mark element as cancelled/skipped on canvas

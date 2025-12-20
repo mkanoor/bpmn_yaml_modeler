@@ -297,10 +297,17 @@ class SendTaskExecutor(TaskExecutor):
 
         # Add approval links if requested
         if include_approval_links:
+            resolved_correlation_key = self.resolve_variables(approval_correlation_key, context)
+            logger.info(f"📧 Email approval setup:")
+            logger.info(f"   Message ref: {approval_message_ref}")
+            logger.info(f"   Correlation key template: {approval_correlation_key}")
+            logger.info(f"   Resolved correlation key: {resolved_correlation_key}")
+            logger.info(f"   Context workflowInstanceId: {context.get('workflowInstanceId', 'NOT SET')}")
+
             resolved_body = self.add_approval_links(
                 resolved_body,
                 approval_message_ref,
-                self.resolve_variables(approval_correlation_key, context),
+                resolved_correlation_key,
                 html_format
             )
 
@@ -436,13 +443,17 @@ class SendTaskExecutor(TaskExecutor):
             ngrok_url = ngrok_url[:-1]
 
         # Debug logging
-        logger.info(f"Building approval URLs: message_ref={message_ref}, correlation_key='{correlation_key}'")
+        logger.info(f"🔗 Building approval URLs:")
+        logger.info(f"   Message ref: {message_ref}")
+        logger.info(f"   Correlation key: {correlation_key}")
+        logger.info(f"   Ngrok URL: {ngrok_url}")
 
         # Build approval URLs
         approve_url = f"{ngrok_url}/webhooks/approve/{message_ref}/{correlation_key}"
         deny_url = f"{ngrok_url}/webhooks/deny/{message_ref}/{correlation_key}"
 
-        logger.info(f"Approval URL: {approve_url}")
+        logger.info(f"✅ APPROVE URL IN EMAIL: {approve_url}")
+        logger.info(f"❌ DENY URL IN EMAIL: {deny_url}")
 
         if html_format:
             # HTML format with styled buttons
@@ -504,6 +515,7 @@ class ReceiveTaskExecutor(TaskExecutor):
         use_webhook = props.get('useWebhook', False)
 
         # Resolve correlation key from context
+        original_correlation_key = correlation_key
         if correlation_key:
             import re
             def replacer(match):
@@ -511,6 +523,11 @@ class ReceiveTaskExecutor(TaskExecutor):
                 return str(context.get(var_name, ''))
             correlation_key = re.sub(r'\$\{([^}]+)\}', replacer, correlation_key)
 
+        logger.info(f"📥 Receive task setup:")
+        logger.info(f"   Message ref: {message_ref}")
+        logger.info(f"   Correlation key template: {original_correlation_key}")
+        logger.info(f"   Resolved correlation key: {correlation_key}")
+        logger.info(f"   Context workflowInstanceId: {context.get('workflowInstanceId', 'NOT SET')}")
         logger.info(f"Waiting for message: {message_ref}, correlation: {correlation_key}, webhook: {use_webhook}")
 
         yield TaskProgress(

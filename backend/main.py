@@ -501,7 +501,12 @@ async def approve_via_email(message_ref: str, correlation_key: str):
     POST /webhooks/approve/approvalRequest/order-12345
     """
     try:
-        logger.info(f"Email approval (POST): {message_ref}, correlation: {correlation_key}")
+        logger.info(f"📬 ========================================")
+        logger.info(f"📬 Email approval CLICKED (POST)")
+        logger.info(f"📬 Message ref: {message_ref}")
+        logger.info(f"📬 Correlation key: {correlation_key}")
+        logger.info(f"📬 Full URL: /webhooks/approve/{message_ref}/{correlation_key}")
+        logger.info(f"📬 ========================================")
 
         # Publish approval message
         message_queue = get_message_queue()

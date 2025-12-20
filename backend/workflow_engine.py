@@ -61,7 +61,11 @@ class WorkflowEngine:
         # Add instance ID to context for use in workflows (e.g., approval correlation keys)
         self.context['workflowInstanceId'] = self.instance_id
 
-        logger.info(f"Starting workflow execution: {self.instance_id}")
+        logger.info(f"🚀 ========================================")
+        logger.info(f"🚀 Starting NEW workflow execution")
+        logger.info(f"🚀 Instance ID: {self.instance_id}")
+        logger.info(f"🚀 Context keys: {list(self.context.keys())}")
+        logger.info(f"🚀 ========================================")
 
         # Broadcast workflow started
         await self.agui_server.send_workflow_started(
@@ -160,12 +164,18 @@ class WorkflowEngine:
 
     async def cancel_competing_tasks(self, gateway: Element, incoming_connections):
         """Cancel tasks from paths that haven't reached the merge yet"""
+        logger.info(f"=== cancel_competing_tasks called for gateway {gateway.id} ({gateway.name}) ===")
+        logger.info(f"Number of incoming connections: {len(incoming_connections)}")
+        logger.info(f"Active tasks: {list(self.active_tasks.keys())}")
+
         # For each incoming connection, walk backward to find active tasks
         for conn in incoming_connections:
             from_element_id = conn.from_
+            logger.info(f"Checking incoming connection from: {from_element_id}")
+
             if from_element_id in self.active_tasks:
                 task = self.active_tasks[from_element_id]
-                logger.info(f"Cancelling task {task.id} ({task.name}) - competing path lost to merge")
+                logger.info(f"✅ CANCELLING task {task.id} ({task.name}) - competing path lost to merge")
 
                 # Send cancellation event to UI
                 await self.agui_server.send_task_cancelled(
@@ -175,12 +185,16 @@ class WorkflowEngine:
 
                 # Remove from active tasks
                 del self.active_tasks[task.id]
+                logger.info(f"Task {task.id} removed from active_tasks")
+            else:
+                logger.info(f"❌ Task {from_element_id} not in active_tasks (already completed or not started)")
 
     async def execute_task(self, task: Element):
         """Execute a task using appropriate executor"""
         # Mark task as active
         self.active_tasks[task.id] = task
         logger.info(f"Executing task: {task.name} (type: {task.type})")
+        logger.info(f"✅ Task {task.id} added to active_tasks. Current active: {list(self.active_tasks.keys())}")
 
         # Get executor for task type
         executor = self.task_executors.get_executor(task.type)
@@ -215,9 +229,11 @@ class WorkflowEngine:
     async def execute_gateway(self, gateway: Element):
         """Execute a gateway and return next element(s) to follow"""
         logger.info(f"Executing gateway: {gateway.name} (type: {gateway.type})")
+        logger.info(f"Current active_tasks when entering gateway: {list(self.active_tasks.keys())}")
 
         # Check if this is a merge point (multiple incoming connections)
         incoming = self.workflow.get_incoming_connections(gateway)
+        logger.info(f"Incoming connections to gateway {gateway.id}: {[f'{c.from_} -> {c.to}' for c in incoming]}")
 
         if len(incoming) > 1:
             # This is a merge gateway - need to handle merge semantics
