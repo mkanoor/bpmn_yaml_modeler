@@ -281,9 +281,12 @@ class BPMNModeler {
         text.setAttribute('y', pool.y + pool.height / 2);
         text.setAttribute('class', 'pool-label');
         text.setAttribute('fill', 'black');
+        text.setAttribute('stroke', 'none');
         text.setAttribute('font-family', 'Arial, sans-serif');
         text.setAttribute('font-size', '14');
         text.setAttribute('font-weight', 'bold');
+        text.setAttribute('shape-rendering', 'crispEdges');
+        text.setAttribute('text-rendering', 'optimizeLegibility');
         text.setAttribute('transform', `rotate(-90, ${pool.x + 15}, ${pool.y + pool.height / 2})`);
         text.textContent = pool.name;
         g.appendChild(text);
@@ -305,9 +308,11 @@ class BPMNModeler {
             laneText.setAttribute('y', currentY + 25);
             laneText.setAttribute('class', 'lane-label');
             laneText.setAttribute('fill', 'black');
+            laneText.setAttribute('stroke', 'none');
             laneText.setAttribute('font-family', 'Arial, sans-serif');
             laneText.setAttribute('font-size', '13');
             laneText.setAttribute('font-weight', 'bold');
+            laneText.setAttribute('text-rendering', 'optimizeLegibility');
             laneText.textContent = lane.name;
             g.appendChild(laneText);
 
