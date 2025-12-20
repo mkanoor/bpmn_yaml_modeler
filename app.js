@@ -557,37 +557,37 @@ class BPMNModeler {
                         this.renderSubProcessChildren(g, element);
                     }
                 } else if (element.type === 'userTask') {
-                    // User icon (person)
+                    // User icon (person) - positioned in top-left corner
                     const userCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-                    userCircle.setAttribute('cx', -40);
-                    userCircle.setAttribute('cy', -20);
-                    userCircle.setAttribute('r', 3);
+                    userCircle.setAttribute('cx', -48);
+                    userCircle.setAttribute('cy', -28);
+                    userCircle.setAttribute('r', 4);
                     userCircle.setAttribute('fill', 'none');
                     userCircle.setAttribute('stroke', '#000');
                     userCircle.setAttribute('stroke-width', 1);
                     g.appendChild(userCircle);
                     const userBody = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                    userBody.setAttribute('d', 'M -43 -12 Q -40 -15 -37 -12');
+                    userBody.setAttribute('d', 'M -52 -20 Q -48 -24 -44 -20');
                     userBody.setAttribute('fill', 'none');
                     userBody.setAttribute('stroke', '#000');
                     userBody.setAttribute('stroke-width', 1);
                     g.appendChild(userBody);
                 } else if (element.type === 'serviceTask') {
-                    // Gear icon
+                    // Gear icon - positioned in top-left corner
                     const gearCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-                    gearCircle.setAttribute('cx', -40);
-                    gearCircle.setAttribute('cy', -15);
-                    gearCircle.setAttribute('r', 5);
+                    gearCircle.setAttribute('cx', -48);
+                    gearCircle.setAttribute('cy', -28);
+                    gearCircle.setAttribute('r', 6);
                     gearCircle.setAttribute('fill', 'none');
                     gearCircle.setAttribute('stroke', '#000');
                     gearCircle.setAttribute('stroke-width', 1);
                     g.appendChild(gearCircle);
                     // Gear teeth
                     const teeth = [
-                        { x1: -40, y1: -20, x2: -40, y2: -23 },
-                        { x1: -40, y1: -10, x2: -40, y2: -7 },
-                        { x1: -35, y1: -15, x2: -32, y2: -15 },
-                        { x1: -45, y1: -15, x2: -48, y2: -15 }
+                        { x1: -48, y1: -34, x2: -48, y2: -36 },
+                        { x1: -48, y1: -22, x2: -48, y2: -20 },
+                        { x1: -42, y1: -28, x2: -40, y2: -28 },
+                        { x1: -54, y1: -28, x2: -56, y2: -28 }
                     ];
                     teeth.forEach(t => {
                         const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
@@ -600,143 +600,143 @@ class BPMNModeler {
                         g.appendChild(line);
                     });
                 } else if (element.type === 'scriptTask') {
-                    // Script/document icon
+                    // Script/document icon - positioned in top-left corner
                     const scriptPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                    scriptPath.setAttribute('d', 'M -45 -20 L -43 -20 L -42 -18 L -43 -16 L -45 -16');
+                    scriptPath.setAttribute('d', 'M -54 -32 L -52 -32 L -50 -30 L -52 -28 L -54 -28');
                     scriptPath.setAttribute('fill', 'none');
                     scriptPath.setAttribute('stroke', '#000');
                     scriptPath.setAttribute('stroke-width', 1);
                     g.appendChild(scriptPath);
                     const line1 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-                    line1.setAttribute('x1', -40);
-                    line1.setAttribute('y1', -18);
-                    line1.setAttribute('x2', -35);
-                    line1.setAttribute('y2', -18);
+                    line1.setAttribute('x1', -48);
+                    line1.setAttribute('y1', -30);
+                    line1.setAttribute('x2', -42);
+                    line1.setAttribute('y2', -30);
                     line1.setAttribute('stroke', '#000');
                     line1.setAttribute('stroke-width', 1);
                     g.appendChild(line1);
                     const line2 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-                    line2.setAttribute('x1', -45);
-                    line2.setAttribute('y1', -14);
-                    line2.setAttribute('x2', -40);
-                    line2.setAttribute('y2', -14);
+                    line2.setAttribute('x1', -54);
+                    line2.setAttribute('y1', -26);
+                    line2.setAttribute('x2', -48);
+                    line2.setAttribute('y2', -26);
                     line2.setAttribute('stroke', '#000');
                     line2.setAttribute('stroke-width', 1);
                     g.appendChild(line2);
                 } else if (element.type === 'sendTask') {
-                    // Filled envelope
+                    // Filled envelope - positioned in top-left corner
                     const envelope = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                    envelope.setAttribute('d', 'M -47 -20 L -47 -10 L -33 -10 L -33 -20 Z');
+                    envelope.setAttribute('d', 'M -56 -32 L -56 -22 L -42 -22 L -42 -32 Z');
                     envelope.setAttribute('fill', '#000');
                     envelope.setAttribute('stroke', '#000');
                     envelope.setAttribute('stroke-width', 1);
                     g.appendChild(envelope);
                     const flap = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                    flap.setAttribute('d', 'M -47 -20 L -40 -15 L -33 -20');
+                    flap.setAttribute('d', 'M -56 -32 L -49 -27 L -42 -32');
                     flap.setAttribute('fill', '#000');
                     flap.setAttribute('stroke', '#000');
                     flap.setAttribute('stroke-width', 1);
                     g.appendChild(flap);
                 } else if (element.type === 'receiveTask') {
-                    // Empty envelope
+                    // Empty envelope - positioned in top-left corner
                     const envelope = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                    envelope.setAttribute('d', 'M -47 -20 L -47 -10 L -33 -10 L -33 -20 Z');
+                    envelope.setAttribute('d', 'M -56 -32 L -56 -22 L -42 -22 L -42 -32 Z');
                     envelope.setAttribute('fill', 'white');
                     envelope.setAttribute('stroke', '#000');
                     envelope.setAttribute('stroke-width', 1);
                     g.appendChild(envelope);
                     const flap = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                    flap.setAttribute('d', 'M -47 -20 L -40 -15 L -33 -20');
+                    flap.setAttribute('d', 'M -56 -32 L -49 -27 L -42 -32');
                     flap.setAttribute('fill', 'white');
                     flap.setAttribute('stroke', '#000');
                     flap.setAttribute('stroke-width', 1);
                     g.appendChild(flap);
                 } else if (element.type === 'manualTask') {
-                    // Hand icon
+                    // Hand icon - positioned in top-left corner
                     const hand = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                    hand.setAttribute('d', 'M -45 -12 L -45 -18 L -42 -18 L -42 -22 L -40 -22 L -40 -16 L -43 -16 L -43 -12 Z');
+                    hand.setAttribute('d', 'M -54 -22 L -54 -28 L -50 -28 L -50 -32 L -48 -32 L -48 -26 L -52 -26 L -52 -22 Z');
                     hand.setAttribute('fill', 'none');
                     hand.setAttribute('stroke', '#000');
                     hand.setAttribute('stroke-width', 1);
                     g.appendChild(hand);
                 } else if (element.type === 'businessRuleTask') {
-                    // Table icon
+                    // Table icon - positioned in top-left corner
                     const table = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-                    table.setAttribute('x', -46);
-                    table.setAttribute('y', -20);
-                    table.setAttribute('width', 12);
-                    table.setAttribute('height', 10);
+                    table.setAttribute('x', -56);
+                    table.setAttribute('y', -32);
+                    table.setAttribute('width', 14);
+                    table.setAttribute('height', 12);
                     table.setAttribute('fill', 'none');
                     table.setAttribute('stroke', '#000');
                     table.setAttribute('stroke-width', 1);
                     g.appendChild(table);
                     const hLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-                    hLine.setAttribute('x1', -46);
-                    hLine.setAttribute('y1', -17);
-                    hLine.setAttribute('x2', -34);
-                    hLine.setAttribute('y2', -17);
+                    hLine.setAttribute('x1', -56);
+                    hLine.setAttribute('y1', -28);
+                    hLine.setAttribute('x2', -42);
+                    hLine.setAttribute('y2', -28);
                     hLine.setAttribute('stroke', '#000');
                     hLine.setAttribute('stroke-width', 1);
                     g.appendChild(hLine);
                     const vLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-                    vLine.setAttribute('x1', -42);
-                    vLine.setAttribute('y1', -20);
-                    vLine.setAttribute('x2', -42);
-                    vLine.setAttribute('y2', -10);
+                    vLine.setAttribute('x1', -50);
+                    vLine.setAttribute('y1', -32);
+                    vLine.setAttribute('x2', -50);
+                    vLine.setAttribute('y2', -20);
                     vLine.setAttribute('stroke', '#000');
                     vLine.setAttribute('stroke-width', 1);
                     g.appendChild(vLine);
                 } else if (element.type === 'agenticTask') {
-                    // Brain icon (AI/LLM indicator)
+                    // Brain icon (AI/LLM indicator) - positioned in top-left corner
                     const aiColor = '#6366f1'; // Indigo color for AI
 
-                    // Brain outline (simplified brain shape)
+                    // Brain outline (simplified brain shape) - compact version
                     const brainPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                    brainPath.setAttribute('d', 'M -50 -30 C -52 -32 -52 -34 -50 -36 C -48 -38 -44 -38 -42 -36 C -41 -38 -39 -38 -38 -36 C -36 -38 -32 -38 -30 -36 C -28 -34 -28 -32 -30 -30 C -30 -28 -30 -26 -32 -24 C -34 -22 -36 -22 -38 -24 C -39 -22 -41 -22 -42 -24 C -44 -22 -46 -22 -48 -24 C -50 -26 -50 -28 -50 -30 Z');
+                    brainPath.setAttribute('d', 'M -56 -28 C -57 -29 -57 -30 -56 -31 C -55 -32 -53 -32 -52 -31 C -51.5 -32 -50.5 -32 -50 -31 C -49 -32 -47 -32 -46 -31 C -45 -30 -45 -29 -46 -28 C -46 -27 -46 -26 -47 -25 C -48 -24 -49 -24 -50 -25 C -50.5 -24 -51.5 -24 -52 -25 C -53 -24 -54 -24 -55 -25 C -56 -26 -56 -27 -56 -28 Z');
                     brainPath.setAttribute('fill', 'none');
                     brainPath.setAttribute('stroke', aiColor);
-                    brainPath.setAttribute('stroke-width', 1.5);
+                    brainPath.setAttribute('stroke-width', 1.2);
                     g.appendChild(brainPath);
 
                     // Brain folds/wrinkles (left hemisphere)
                     const fold1 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                    fold1.setAttribute('d', 'M -48 -32 Q -46 -30 -46 -28');
+                    fold1.setAttribute('d', 'M -55 -29 Q -54 -28 -54 -27');
                     fold1.setAttribute('fill', 'none');
                     fold1.setAttribute('stroke', aiColor);
-                    fold1.setAttribute('stroke-width', 1);
+                    fold1.setAttribute('stroke-width', 0.8);
                     g.appendChild(fold1);
 
                     const fold2 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                    fold2.setAttribute('d', 'M -44 -34 Q -42 -32 -42 -30');
+                    fold2.setAttribute('d', 'M -53 -30 Q -52 -29 -52 -28');
                     fold2.setAttribute('fill', 'none');
                     fold2.setAttribute('stroke', aiColor);
-                    fold2.setAttribute('stroke-width', 1);
+                    fold2.setAttribute('stroke-width', 0.8);
                     g.appendChild(fold2);
 
                     // Brain folds/wrinkles (right hemisphere)
                     const fold3 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                    fold3.setAttribute('d', 'M -38 -34 Q -36 -32 -36 -30');
+                    fold3.setAttribute('d', 'M -50 -30 Q -49 -29 -49 -28');
                     fold3.setAttribute('fill', 'none');
                     fold3.setAttribute('stroke', aiColor);
-                    fold3.setAttribute('stroke-width', 1);
+                    fold3.setAttribute('stroke-width', 0.8);
                     g.appendChild(fold3);
 
                     const fold4 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                    fold4.setAttribute('d', 'M -34 -32 Q -32 -30 -32 -28');
+                    fold4.setAttribute('d', 'M -48 -29 Q -47 -28 -47 -27');
                     fold4.setAttribute('fill', 'none');
                     fold4.setAttribute('stroke', aiColor);
-                    fold4.setAttribute('stroke-width', 1);
+                    fold4.setAttribute('stroke-width', 0.8);
                     g.appendChild(fold4);
 
                     // Center line (corpus callosum)
                     const centerLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-                    centerLine.setAttribute('x1', -40);
-                    centerLine.setAttribute('y1', -36);
-                    centerLine.setAttribute('x2', -40);
-                    centerLine.setAttribute('y2', -24);
+                    centerLine.setAttribute('x1', -51);
+                    centerLine.setAttribute('y1', -31);
+                    centerLine.setAttribute('x2', -51);
+                    centerLine.setAttribute('y2', -25);
                     centerLine.setAttribute('stroke', aiColor);
-                    centerLine.setAttribute('stroke-width', 0.8);
-                    centerLine.setAttribute('stroke-dasharray', '2,1');
+                    centerLine.setAttribute('stroke-width', 0.6);
+                    centerLine.setAttribute('stroke-dasharray', '1.5,0.8');
                     g.appendChild(centerLine);
                 }
                 break;
