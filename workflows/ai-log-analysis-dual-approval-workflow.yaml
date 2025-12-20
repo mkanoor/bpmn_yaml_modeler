@@ -160,7 +160,7 @@ process:
       laneId: lane_1
       properties:
         messageType: "Email"
-        to: "${requester.email}"
+        to: ""
         subject: "Approval Required: Log Analysis Diagnostics"
         messageBody: |
           Your log analysis has completed. Please review and approve the diagnostic steps.
@@ -206,7 +206,7 @@ process:
       poolId: pool_1
       laneId: lane_2
       properties:
-        assignee: "${requester.email}"
+        assignee: ""
         candidateGroups: "devops-team, sre-team"
         priority: "High"
         dueDate: "PT2H"
@@ -353,7 +353,7 @@ process:
       laneId: lane_3
       properties:
         messageType: "Email"
-        to: "${requester.email}, devops-team@company.com"
+        to: ""
         subject: "Log Analysis & Remediation Complete"
         messageBody: |
           Your log analysis workflow has completed successfully.
@@ -416,7 +416,7 @@ process:
       laneId: lane_2
       properties:
         messageType: "Email"
-        to: "${requester.email}"
+        to: ""
         subject: "Diagnostic Steps Rejected"
         messageBody: "The AI-generated diagnostic steps were rejected during review. Comments: ${approvalComments}"
         documentation: "Notify user of rejection"
