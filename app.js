@@ -720,7 +720,7 @@ class BPMNModeler {
                     g.appendChild(vLine);
                 } else if (element.type === 'agenticTask') {
                     // Brain icon (AI/LLM indicator) - positioned in top-left corner
-                    const aiColor = '#6366f1'; // Indigo color for AI
+                    const aiColor = '#ec4899'; // Pink color for AI
 
                     // Brain outline (simplified brain shape) - compact version
                     const brainPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
