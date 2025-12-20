@@ -6,7 +6,7 @@ import logging
 from datetime import datetime, timezone
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 from typing import Dict, Any
 import uvicorn
 
@@ -392,15 +392,116 @@ async def clear_queued_messages(correlation_key: str):
 
 
 @app.get("/webhooks/approve/{message_ref}/{correlation_key}")
-async def approve_via_email(message_ref: str, correlation_key: str):
+async def approve_confirmation_page(message_ref: str, correlation_key: str):
     """
-    Email approval webhook - Approve action
+    Email approval webhook - Show confirmation page
     User clicks approve link in email
 
     GET /webhooks/approve/approvalRequest/order-12345
+    Returns HTML page with confirmation button that POSTs
+    """
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Approval Confirmation</title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+            body {{
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+                max-width: 600px;
+                margin: 50px auto;
+                padding: 20px;
+                text-align: center;
+                background: #f5f5f5;
+            }}
+            .container {{
+                background: white;
+                border-radius: 8px;
+                padding: 40px;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            }}
+            h1 {{
+                color: #27ae60;
+                margin-bottom: 10px;
+            }}
+            p {{
+                color: #555;
+                line-height: 1.6;
+                margin-bottom: 25px;
+            }}
+            .btn {{
+                background: #27ae60;
+                color: white;
+                border: none;
+                padding: 15px 40px;
+                font-size: 16px;
+                border-radius: 5px;
+                cursor: pointer;
+                transition: all 0.3s;
+                font-weight: 600;
+            }}
+            .btn:hover {{
+                background: #229954;
+                transform: translateY(-2px);
+                box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            }}
+            .btn-cancel {{
+                background: #95a5a6;
+                margin-left: 10px;
+            }}
+            .btn-cancel:hover {{
+                background: #7f8c8d;
+            }}
+            .info {{
+                background: #f8f9fa;
+                border-left: 4px solid #3498db;
+                padding: 15px;
+                margin: 25px 0;
+                text-align: left;
+                border-radius: 4px;
+            }}
+            .info p {{
+                margin: 5px 0;
+                font-size: 14px;
+            }}
+            .info strong {{
+                color: #2c3e50;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>✓ Confirm Approval</h1>
+            <p>You are about to approve this request. Please confirm your decision.</p>
+
+            <div class="info">
+                <p><strong>Request ID:</strong> {message_ref}</p>
+                <p><strong>Correlation:</strong> {correlation_key[:8] if correlation_key else 'N/A'}...</p>
+            </div>
+
+            <form method="POST" action="/webhooks/approve/{message_ref}/{correlation_key}">
+                <button type="submit" class="btn">Approve</button>
+                <button type="button" class="btn btn-cancel" onclick="window.close()">Cancel</button>
+            </form>
+        </div>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content)
+
+
+@app.post("/webhooks/approve/{message_ref}/{correlation_key}")
+async def approve_via_email(message_ref: str, correlation_key: str):
+    """
+    Email approval webhook - Process approval (POST)
+    User confirms approval via button
+
+    POST /webhooks/approve/approvalRequest/order-12345
     """
     try:
-        logger.info(f"Email approval: {message_ref}, correlation: {correlation_key}")
+        logger.info(f"Email approval (POST): {message_ref}, correlation: {correlation_key}")
 
         # Publish approval message
         message_queue = get_message_queue()
@@ -414,16 +515,56 @@ async def approve_via_email(message_ref: str, correlation_key: str):
             }
         )
 
-        # Return user-friendly HTML response
-        return JSONResponse(
-            content={
-                "status": "approved",
-                "message": "Your approval has been recorded. You may close this window.",
-                "messageRef": message_ref,
-                "correlationKey": correlation_key
-            },
-            headers={"Content-Type": "application/json"}
-        )
+        # Return success HTML page
+        html_content = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Approval Confirmed</title>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <style>
+                body {
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+                    max-width: 600px;
+                    margin: 50px auto;
+                    padding: 20px;
+                    text-align: center;
+                    background: #f5f5f5;
+                }
+                .container {
+                    background: #d5f4e6;
+                    border-radius: 8px;
+                    padding: 40px;
+                    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                }
+                h1 {
+                    color: #27ae60;
+                    margin-top: 10px;
+                }
+                .checkmark {
+                    font-size: 64px;
+                    color: #27ae60;
+                    margin-bottom: 10px;
+                }
+                p {
+                    color: #2c3e50;
+                    font-size: 16px;
+                    margin: 10px 0;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="checkmark">✓</div>
+                <h1>Approval Confirmed</h1>
+                <p>Your approval has been recorded successfully.</p>
+                <p>You may close this window.</p>
+            </div>
+        </body>
+        </html>
+        """
+        return HTMLResponse(content=html_content)
 
     except Exception as e:
         logger.error(f"Error processing email approval: {e}", exc_info=True)
@@ -431,15 +572,116 @@ async def approve_via_email(message_ref: str, correlation_key: str):
 
 
 @app.get("/webhooks/deny/{message_ref}/{correlation_key}")
-async def deny_via_email(message_ref: str, correlation_key: str):
+async def deny_confirmation_page(message_ref: str, correlation_key: str):
     """
-    Email approval webhook - Deny action
+    Email denial webhook - Show confirmation page
     User clicks deny link in email
 
     GET /webhooks/deny/approvalRequest/order-12345
+    Returns HTML page with confirmation button that POSTs
+    """
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Denial Confirmation</title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+            body {{
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+                max-width: 600px;
+                margin: 50px auto;
+                padding: 20px;
+                text-align: center;
+                background: #f5f5f5;
+            }}
+            .container {{
+                background: white;
+                border-radius: 8px;
+                padding: 40px;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            }}
+            h1 {{
+                color: #e74c3c;
+                margin-bottom: 10px;
+            }}
+            p {{
+                color: #555;
+                line-height: 1.6;
+                margin-bottom: 25px;
+            }}
+            .btn {{
+                background: #e74c3c;
+                color: white;
+                border: none;
+                padding: 15px 40px;
+                font-size: 16px;
+                border-radius: 5px;
+                cursor: pointer;
+                transition: all 0.3s;
+                font-weight: 600;
+            }}
+            .btn:hover {{
+                background: #c0392b;
+                transform: translateY(-2px);
+                box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            }}
+            .btn-cancel {{
+                background: #95a5a6;
+                margin-left: 10px;
+            }}
+            .btn-cancel:hover {{
+                background: #7f8c8d;
+            }}
+            .info {{
+                background: #f8f9fa;
+                border-left: 4px solid #3498db;
+                padding: 15px;
+                margin: 25px 0;
+                text-align: left;
+                border-radius: 4px;
+            }}
+            .info p {{
+                margin: 5px 0;
+                font-size: 14px;
+            }}
+            .info strong {{
+                color: #2c3e50;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>✗ Confirm Denial</h1>
+            <p>You are about to deny this request. Please confirm your decision.</p>
+
+            <div class="info">
+                <p><strong>Request ID:</strong> {message_ref}</p>
+                <p><strong>Correlation:</strong> {correlation_key[:8] if correlation_key else 'N/A'}...</p>
+            </div>
+
+            <form method="POST" action="/webhooks/deny/{message_ref}/{correlation_key}">
+                <button type="submit" class="btn">Deny</button>
+                <button type="button" class="btn btn-cancel" onclick="window.close()">Cancel</button>
+            </form>
+        </div>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content)
+
+
+@app.post("/webhooks/deny/{message_ref}/{correlation_key}")
+async def deny_via_email(message_ref: str, correlation_key: str):
+    """
+    Email denial webhook - Process denial (POST)
+    User confirms denial via button
+
+    POST /webhooks/deny/approvalRequest/order-12345
     """
     try:
-        logger.info(f"Email denial: {message_ref}, correlation: {correlation_key}")
+        logger.info(f"Email denial (POST): {message_ref}, correlation: {correlation_key}")
 
         # Publish denial message
         message_queue = get_message_queue()
@@ -453,16 +695,56 @@ async def deny_via_email(message_ref: str, correlation_key: str):
             }
         )
 
-        # Return user-friendly HTML response
-        return JSONResponse(
-            content={
-                "status": "denied",
-                "message": "Your denial has been recorded. You may close this window.",
-                "messageRef": message_ref,
-                "correlationKey": correlation_key
-            },
-            headers={"Content-Type": "application/json"}
-        )
+        # Return success HTML page
+        html_content = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Denial Confirmed</title>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <style>
+                body {
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+                    max-width: 600px;
+                    margin: 50px auto;
+                    padding: 20px;
+                    text-align: center;
+                    background: #f5f5f5;
+                }
+                .container {
+                    background: #fadbd8;
+                    border-radius: 8px;
+                    padding: 40px;
+                    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                }
+                h1 {
+                    color: #e74c3c;
+                    margin-top: 10px;
+                }
+                .crossmark {
+                    font-size: 64px;
+                    color: #e74c3c;
+                    margin-bottom: 10px;
+                }
+                p {
+                    color: #2c3e50;
+                    font-size: 16px;
+                    margin: 10px 0;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="crossmark">✗</div>
+                <h1>Denial Confirmed</h1>
+                <p>Your denial has been recorded successfully.</p>
+                <p>You may close this window.</p>
+            </div>
+        </body>
+        </html>
+        """
+        return HTMLResponse(content=html_content)
 
     except Exception as e:
         logger.error(f"Error processing email denial: {e}", exc_info=True)
