@@ -34,6 +34,12 @@ class WorkflowEngine:
         self.start_time: Optional[datetime] = None
         self.context: Dict[str, Any] = {}
 
+        # Merge point tracking for gateways (tracks which paths have arrived)
+        # Key: gateway_id, Value: set of incoming element IDs that have arrived
+        self.merge_arrivals: Dict[str, set] = {}
+        # Lock for merge point synchronization
+        self.merge_locks: Dict[str, asyncio.Lock] = {}
+
     def parse_yaml(self, yaml_content: str) -> Workflow:
         """Parse YAML into workflow object model"""
         try:
@@ -183,6 +189,43 @@ class WorkflowEngine:
     async def execute_gateway(self, gateway: Element):
         """Execute a gateway and return next element(s) to follow"""
         logger.info(f"Executing gateway: {gateway.name} (type: {gateway.type})")
+
+        # Check if this is a merge point (multiple incoming connections)
+        incoming = self.workflow.get_incoming_connections(gateway)
+
+        if len(incoming) > 1:
+            # This is a merge gateway - need to handle merge semantics
+            logger.info(f"Gateway {gateway.id} is a merge point with {len(incoming)} incoming paths")
+
+            # Get or create lock for this merge point
+            if gateway.id not in self.merge_locks:
+                self.merge_locks[gateway.id] = asyncio.Lock()
+
+            async with self.merge_locks[gateway.id]:
+                # Track which path arrived
+                if gateway.id not in self.merge_arrivals:
+                    self.merge_arrivals[gateway.id] = set()
+
+                # For now, we can't easily track which path we arrived from
+                # So we'll use a simplified approach:
+                # - Parallel gateways: wait for ALL incoming paths
+                # - Inclusive gateways: first path wins (continue immediately)
+                # - Exclusive gateways: only one path arrives anyway
+
+                if gateway.type == 'parallelGateway':
+                    # Parallel merge: wait for all paths
+                    # This would require more sophisticated tracking - for now, just pass through
+                    logger.info(f"Parallel gateway merge - passing through (simplified)")
+                elif gateway.type == 'inclusiveGateway':
+                    # Inclusive merge: first path wins
+                    if len(self.merge_arrivals[gateway.id]) > 0:
+                        # Another path already passed through - this path should stop
+                        logger.info(f"Inclusive gateway {gateway.id}: Another path already passed - stopping this path")
+                        return []  # Return empty list to stop this path
+                    else:
+                        # First path to arrive - mark and continue
+                        logger.info(f"Inclusive gateway {gateway.id}: First path to arrive - continuing")
+                        self.merge_arrivals[gateway.id].add('first')
 
         # Evaluate gateway to get next element(s)
         next_elements = await self.gateway_evaluator.evaluate_gateway(gateway, self.context)
