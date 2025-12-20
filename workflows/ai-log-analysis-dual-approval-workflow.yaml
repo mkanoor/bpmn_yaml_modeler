@@ -558,14 +558,14 @@ process:
       from: element_24
       to: element_8
 
-    # Approved - generate playbook
+    # Approved - generate playbook (default path)
     - id: conn_10
       type: sequenceFlow
       name: "approved"
       from: element_8
       to: element_9
       properties:
-        condition: "${approvalDecision} == 'approved'"
+        condition: ""
 
     # Rejected - notify and end
     - id: conn_11
@@ -595,14 +595,14 @@ process:
       from: element_10
       to: element_11
 
-    # Valid playbook - execute
+    # Valid playbook - execute (default path)
     - id: conn_15
       type: sequenceFlow
       name: "valid"
       from: element_11
       to: element_12
       properties:
-        condition: "${validationResult.valid} == true"
+        condition: ""
 
     # Invalid playbook - try to fix
     - id: conn_16
