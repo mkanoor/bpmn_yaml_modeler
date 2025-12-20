@@ -491,14 +491,14 @@ process:
       from: element_5
       to: element_6
 
-    # Valid diagnostics path - send for dual approval
+    # Valid diagnostics path - send for dual approval (default path)
     - id: conn_6
       type: sequenceFlow
       name: "yes"
       from: element_6
       to: element_21
       properties:
-        condition: "${validationResult.valid} == true"
+        condition: ""
 
     # Invalid diagnostics - manual review
     - id: conn_7
