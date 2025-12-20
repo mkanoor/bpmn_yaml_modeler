@@ -35,10 +35,12 @@ class WorkflowEngine:
         self.context: Dict[str, Any] = {}
 
         # Merge point tracking for gateways (tracks which paths have arrived)
-        # Key: gateway_id, Value: set of incoming element IDs that have arrived
-        self.merge_arrivals: Dict[str, set] = {}
+        # Key: gateway_id, Value: dict with 'completed' flag and 'elements' set
+        self.merge_arrivals: Dict[str, Dict[str, Any]] = {}
         # Lock for merge point synchronization
         self.merge_locks: Dict[str, asyncio.Lock] = {}
+        # Track active tasks that may need cancellation (key: element_id, value: element)
+        self.active_tasks: Dict[str, Element] = {}
 
     def parse_yaml(self, yaml_content: str) -> Workflow:
         """Parse YAML into workflow object model"""
@@ -156,8 +158,28 @@ class WorkflowEngine:
             await self.agui_server.send_task_error(element.id, e, retryable=False)
             raise
 
+    async def cancel_competing_tasks(self, gateway: Element, incoming_connections):
+        """Cancel tasks from paths that haven't reached the merge yet"""
+        # For each incoming connection, walk backward to find active tasks
+        for conn in incoming_connections:
+            from_element_id = conn.from_
+            if from_element_id in self.active_tasks:
+                task = self.active_tasks[from_element_id]
+                logger.info(f"Cancelling task {task.id} ({task.name}) - competing path lost to merge")
+
+                # Send cancellation event to UI
+                await self.agui_server.send_task_cancelled(
+                    task.id,
+                    reason=f"Another approval path completed first at {gateway.name}"
+                )
+
+                # Remove from active tasks
+                del self.active_tasks[task.id]
+
     async def execute_task(self, task: Element):
         """Execute a task using appropriate executor"""
+        # Mark task as active
+        self.active_tasks[task.id] = task
         logger.info(f"Executing task: {task.name} (type: {task.type})")
 
         # Get executor for task type
@@ -175,6 +197,10 @@ class WorkflowEngine:
 
             # Log progress
             logger.debug(f"Task {task.name}: {progress.status} - {progress.message}")
+
+        # Remove from active tasks
+        if task.id in self.active_tasks:
+            del self.active_tasks[task.id]
 
         # Check if this was a user task that was rejected
         if task.type == 'userTask':
@@ -204,7 +230,11 @@ class WorkflowEngine:
             async with self.merge_locks[gateway.id]:
                 # Track which path arrived
                 if gateway.id not in self.merge_arrivals:
-                    self.merge_arrivals[gateway.id] = set()
+                    self.merge_arrivals[gateway.id] = {
+                        'completed': False,
+                        'elements': set(),
+                        'winning_path': None
+                    }
 
                 # For now, we can't easily track which path we arrived from
                 # So we'll use a simplified approach:
@@ -218,14 +248,22 @@ class WorkflowEngine:
                     logger.info(f"Parallel gateway merge - passing through (simplified)")
                 elif gateway.type == 'inclusiveGateway':
                     # Inclusive merge: first path wins
-                    if len(self.merge_arrivals[gateway.id]) > 0:
+                    if self.merge_arrivals[gateway.id]['completed']:
                         # Another path already passed through - this path should stop
                         logger.info(f"Inclusive gateway {gateway.id}: Another path already passed - stopping this path")
+
+                        # Find and cancel any active tasks from other paths
+                        # Look for tasks that are still waiting at this merge point
+                        await self.cancel_competing_tasks(gateway, incoming)
+
                         return []  # Return empty list to stop this path
                     else:
                         # First path to arrive - mark and continue
                         logger.info(f"Inclusive gateway {gateway.id}: First path to arrive - continuing")
-                        self.merge_arrivals[gateway.id].add('first')
+                        self.merge_arrivals[gateway.id]['completed'] = True
+
+                        # Cancel any tasks from other paths that haven't reached the merge yet
+                        await self.cancel_competing_tasks(gateway, incoming)
 
         # Evaluate gateway to get next element(s)
         next_elements = await self.gateway_evaluator.evaluate_gateway(gateway, self.context)

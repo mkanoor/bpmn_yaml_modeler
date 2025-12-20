@@ -132,6 +132,10 @@ class AGUIClient {
                 this.showErrorOnElement(message.elementId, message.error);
                 break;
 
+            case 'task.cancelled':
+                this.handleTaskCancelled(message);
+                break;
+
             case 'pong':
                 // Ping response
                 break;
@@ -404,6 +408,7 @@ class AGUIClient {
         // Create modal
         const modal = document.createElement('div');
         modal.className = 'approval-modal active';
+        modal.setAttribute('data-task-id', taskInstance.taskId);
         modal.innerHTML = `
             <div class="modal-backdrop"></div>
             <div class="modal-content approval-form">
@@ -444,6 +449,46 @@ class AGUIClient {
         `;
 
         document.body.appendChild(modal);
+    }
+
+    handleTaskCancelled(message) {
+        console.log('🚫 Task cancelled:', message.elementId, message.reason);
+
+        // Find and close the approval modal for this task
+        const modal = document.querySelector(`.approval-modal[data-task-id="${message.elementId}"]`);
+        if (modal) {
+            // Add fade-out animation
+            modal.style.opacity = '0';
+            modal.style.transition = 'opacity 0.3s ease-out';
+
+            setTimeout(() => {
+                modal.remove();
+            }, 300);
+
+            // Show notification explaining why it was cancelled
+            this.showNotification(
+                'Approval Cancelled',
+                message.reason || 'Another approval path completed first',
+                'info'
+            );
+        }
+
+        // Mark element as cancelled/skipped on canvas
+        this.markElementCancelled(message.elementId);
+    }
+
+    markElementCancelled(elementId) {
+        const element = document.querySelector(`[data-id="${elementId}"]`);
+        if (element) {
+            element.classList.remove('active');
+            element.classList.add('cancelled');
+
+            // Add visual indicator (greyed out)
+            if (element.tagName === 'rect' || element.tagName === 'circle' || element.tagName === 'path') {
+                element.setAttribute('opacity', '0.4');
+                element.setAttribute('stroke-dasharray', '5,5');
+            }
+        }
     }
 
     approveTask(taskId) {

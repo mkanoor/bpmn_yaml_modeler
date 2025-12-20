@@ -222,3 +222,11 @@ class AGUIServer:
             },
             'retryable': retryable
         })
+
+    async def send_task_cancelled(self, element_id: str, reason: str = "Another path completed first"):
+        """Send task cancellation event (e.g., for inclusive gateway merge)"""
+        await self.send_update({
+            'type': 'task.cancelled',
+            'elementId': element_id,
+            'reason': reason
+        })
