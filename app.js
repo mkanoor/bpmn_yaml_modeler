@@ -297,9 +297,10 @@ class BPMNModeler {
             g.appendChild(laneRect);
 
             const laneText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-            laneText.setAttribute('x', pool.x + 40);
-            laneText.setAttribute('y', currentY + 20);
+            laneText.setAttribute('x', pool.x + 60);
+            laneText.setAttribute('y', currentY + 25);
             laneText.setAttribute('class', 'lane-label');
+            laneText.setAttribute('font-weight', 'bold');
             laneText.textContent = lane.name;
             g.appendChild(laneText);
 
@@ -904,24 +905,48 @@ class BPMNModeler {
     makePoolDraggable(svgElement, pool) {
         let isDragging = false;
         let startX, startY;
+        let initialPoolX, initialPoolY;
 
         svgElement.addEventListener('mousedown', (e) => {
             isDragging = true;
             startX = e.clientX - pool.x;
             startY = e.clientY - pool.y;
+            initialPoolX = pool.x;
+            initialPoolY = pool.y;
         });
 
         document.addEventListener('mousemove', (e) => {
             if (!isDragging) return;
 
-            pool.x = e.clientX - startX;
-            pool.y = e.clientY - startY;
+            const newPoolX = e.clientX - startX;
+            const newPoolY = e.clientY - startY;
 
+            // Calculate the delta movement
+            const deltaX = newPoolX - pool.x;
+            const deltaY = newPoolY - pool.y;
+
+            // Update pool position
+            pool.x = newPoolX;
+            pool.y = newPoolY;
+
+            // Move all elements that belong to this pool
+            this.elements.forEach(element => {
+                if (element.poolId === pool.id) {
+                    element.x += deltaX;
+                    element.y += deltaY;
+                }
+            });
+
+            // Re-render everything
             this.rerenderPools();
+            this.rerenderElements();
         });
 
         document.addEventListener('mouseup', () => {
-            isDragging = false;
+            if (isDragging) {
+                isDragging = false;
+                this.saveState(); // Save state after pool move
+            }
         });
     }
 

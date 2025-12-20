@@ -641,7 +641,8 @@ header h1 {
 
 .lane-label {
     font-size: 12px;
-    text-anchor: middle;
+    text-anchor: start;
+    font-weight: bold;
 }
 
 /* Modal */
