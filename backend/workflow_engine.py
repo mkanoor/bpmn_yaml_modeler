@@ -41,6 +41,8 @@ class WorkflowEngine:
         self.merge_locks: Dict[str, asyncio.Lock] = {}
         # Track active tasks that may need cancellation (key: element_id, value: element)
         self.active_tasks: Dict[str, Element] = {}
+        # Track asyncio tasks for proper cancellation (key: element_id, value: asyncio.Task)
+        self.running_tasks: Dict[str, asyncio.Task] = {}
 
     def parse_yaml(self, yaml_content: str) -> Workflow:
         """Parse YAML into workflow object model"""
@@ -155,7 +157,18 @@ class WorkflowEngine:
             else:
                 # Parallel execution
                 tasks = [self.execute_from_element(elem) for elem in next_elements]
-                await asyncio.gather(*tasks)
+                # Use return_exceptions=True to handle cancelled tasks gracefully
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+
+                # Log any cancellations but don't propagate them
+                for i, result in enumerate(results):
+                    if isinstance(result, asyncio.CancelledError):
+                        logger.info(f"✅ Parallel path {i} was cancelled (expected for merge gateways)")
+
+        except asyncio.CancelledError:
+            # This path was cancelled - stop execution silently
+            logger.info(f"🛑 Execution path cancelled at {element.name}")
+            raise
 
         except Exception as e:
             logger.error(f"Error executing element {element.name}: {e}")
@@ -167,6 +180,7 @@ class WorkflowEngine:
         logger.info(f"=== cancel_competing_tasks called for gateway {gateway.id} ({gateway.name}) ===")
         logger.info(f"Number of incoming connections: {len(incoming_connections)}")
         logger.info(f"Active tasks: {list(self.active_tasks.keys())}")
+        logger.info(f"Running asyncio tasks: {list(self.running_tasks.keys())}")
 
         # For each incoming connection, walk backward to find active tasks
         for conn in incoming_connections:
@@ -176,6 +190,24 @@ class WorkflowEngine:
             if from_element_id in self.active_tasks:
                 task = self.active_tasks[from_element_id]
                 logger.info(f"✅ CANCELLING task {task.id} ({task.name}) - competing path lost to merge")
+
+                # Cancel the asyncio task if it exists
+                if task.id in self.running_tasks:
+                    asyncio_task = self.running_tasks[task.id]
+                    logger.info(f"🔴 Cancelling asyncio task for {task.id}")
+                    asyncio_task.cancel()
+
+                    # Wait a moment for cancellation to propagate
+                    try:
+                        await asyncio.wait_for(asyncio.shield(asyncio_task), timeout=0.1)
+                    except (asyncio.TimeoutError, asyncio.CancelledError):
+                        pass  # Expected when task is cancelled
+
+                    # Remove from running tasks
+                    del self.running_tasks[task.id]
+                    logger.info(f"✅ Asyncio task cancelled and removed")
+                else:
+                    logger.info(f"⚠️ No asyncio task found for {task.id}")
 
                 # Send cancellation event to UI
                 await self.agui_server.send_task_cancelled(
@@ -193,28 +225,49 @@ class WorkflowEngine:
         """Execute a task using appropriate executor"""
         # Mark task as active
         self.active_tasks[task.id] = task
+
+        # Store current asyncio task for cancellation support
+        current_task = asyncio.current_task()
+        if current_task:
+            self.running_tasks[task.id] = current_task
+            logger.info(f"📌 Registered asyncio task for {task.id}")
+
         logger.info(f"Executing task: {task.name} (type: {task.type})")
         logger.info(f"✅ Task {task.id} added to active_tasks. Current active: {list(self.active_tasks.keys())}")
 
-        # Get executor for task type
-        executor = self.task_executors.get_executor(task.type)
+        try:
+            # Get executor for task type
+            executor = self.task_executors.get_executor(task.type)
 
-        # Execute task and handle progress updates
-        async for progress in executor.execute(task, self.context):
-            # Broadcast progress to UI
-            await self.agui_server.send_task_progress(
-                task.id,
-                progress.progress,
-                progress.status,
-                progress.message
-            )
+            # Execute task and handle progress updates
+            async for progress in executor.execute(task, self.context):
+                # Broadcast progress to UI
+                await self.agui_server.send_task_progress(
+                    task.id,
+                    progress.progress,
+                    progress.status,
+                    progress.message
+                )
 
-            # Log progress
-            logger.debug(f"Task {task.name}: {progress.status} - {progress.message}")
+                # Log progress
+                logger.debug(f"Task {task.name}: {progress.status} - {progress.message}")
 
-        # Remove from active tasks
-        if task.id in self.active_tasks:
-            del self.active_tasks[task.id]
+        except asyncio.CancelledError:
+            logger.info(f"🛑 Task {task.id} ({task.name}) was cancelled")
+            # Remove from tracking
+            if task.id in self.active_tasks:
+                del self.active_tasks[task.id]
+            if task.id in self.running_tasks:
+                del self.running_tasks[task.id]
+            # Re-raise to stop this execution path
+            raise
+
+        finally:
+            # Remove from active tasks
+            if task.id in self.active_tasks:
+                del self.active_tasks[task.id]
+            if task.id in self.running_tasks:
+                del self.running_tasks[task.id]
 
         # Check if this was a user task that was rejected
         if task.type == 'userTask':

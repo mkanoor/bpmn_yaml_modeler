@@ -83,20 +83,31 @@ class UserTaskExecutor(TaskExecutor):
             progress=0.5
         )
 
-        # Wait for user completion
-        completion_data = await self.agui_server.wait_for_user_task_completion(task.id)
+        try:
+            # Wait for user completion
+            completion_data = await self.agui_server.wait_for_user_task_completion(task.id)
 
-        # Store completion data in context
-        context[f'{task.id}_decision'] = completion_data.get('decision')
-        context[f'{task.id}_comments'] = completion_data.get('comments')
-        context[f'{task.id}_completedBy'] = completion_data.get('completedBy')
+            # Store completion data in context
+            context[f'{task.id}_decision'] = completion_data.get('decision')
+            context[f'{task.id}_comments'] = completion_data.get('comments')
+            context[f'{task.id}_completedBy'] = completion_data.get('completedBy')
 
-        yield TaskProgress(
-            status='completed',
-            message=f'User task completed: {completion_data.get("decision")}',
-            progress=1.0,
-            result=completion_data
-        )
+            yield TaskProgress(
+                status='completed',
+                message=f'User task completed: {completion_data.get("decision")}',
+                progress=1.0,
+                result=completion_data
+            )
+
+        except asyncio.CancelledError:
+            logger.info(f"🛑 User task {task.id} cancelled - another approval path completed first")
+            yield TaskProgress(
+                status='cancelled',
+                message=f'Task cancelled - another approval path completed first',
+                progress=0.5
+            )
+            # Re-raise to stop execution
+            raise
 
 
 class ServiceTaskExecutor(TaskExecutor):
@@ -571,6 +582,16 @@ class ReceiveTaskExecutor(TaskExecutor):
                     progress=1.0,
                     result=message
                 )
+
+            except asyncio.CancelledError:
+                logger.info(f"🛑 Task {task.id} cancelled while waiting for webhook")
+                yield TaskProgress(
+                    status='cancelled',
+                    message=f'Task cancelled - another approval path completed first',
+                    progress=0.5
+                )
+                # Re-raise to stop execution
+                raise
 
             except asyncio.TimeoutError:
                 logger.error(f"Task {task.id} timed out waiting for webhook")
