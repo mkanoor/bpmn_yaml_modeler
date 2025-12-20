@@ -34,6 +34,8 @@ class BPMNModeler {
     init() {
         this.setupEventListeners();
         this.setupPalette();
+        this.setupThemeSelector();
+        this.loadTheme();
     }
 
     setupEventListeners() {
@@ -2326,6 +2328,43 @@ Your tasks:
             redoBtn.disabled = this.redoStack.length === 0;
             redoBtn.style.opacity = this.redoStack.length === 0 ? '0.5' : '1';
         }
+    }
+
+    // ===== THEME MANAGEMENT =====
+
+    setupThemeSelector() {
+        const themeSelect = document.getElementById('themeSelect');
+        if (!themeSelect) return;
+
+        themeSelect.addEventListener('change', (e) => {
+            this.setTheme(e.target.value);
+        });
+    }
+
+    loadTheme() {
+        // Load theme from localStorage or use default
+        const savedTheme = localStorage.getItem('bpmn-modeler-theme') || 'blue';
+        this.setTheme(savedTheme);
+
+        // Update select dropdown
+        const themeSelect = document.getElementById('themeSelect');
+        if (themeSelect) {
+            themeSelect.value = savedTheme;
+        }
+    }
+
+    setTheme(themeName) {
+        // Apply theme to document
+        if (themeName === 'blue') {
+            document.documentElement.removeAttribute('data-theme');
+        } else {
+            document.documentElement.setAttribute('data-theme', themeName);
+        }
+
+        // Save to localStorage
+        localStorage.setItem('bpmn-modeler-theme', themeName);
+
+        console.log(`Theme changed to: ${themeName}`);
     }
 }
 

@@ -4,6 +4,110 @@
     box-sizing: border-box;
 }
 
+/* Theme Variables - Default (Blue) */
+:root {
+    --primary-color: #3498db;
+    --primary-dark: #2980b9;
+    --primary-light: #5dade2;
+    --header-bg: #2c3e50;
+    --header-text: #ffffff;
+    --accent-color: #3498db;
+    --success-color: #27ae60;
+    --success-dark: #229954;
+    --danger-color: #e74c3c;
+    --danger-dark: #c0392b;
+    --warning-color: #f39c12;
+    --element-stroke: #2c3e50;
+    --element-fill: #ffffff;
+    --selection-glow: #3498db;
+    --connection-point: #3498db;
+}
+
+/* Orange Theme */
+[data-theme="orange"] {
+    --primary-color: #e67e22;
+    --primary-dark: #d35400;
+    --primary-light: #f39c12;
+    --header-bg: #d35400;
+    --accent-color: #e67e22;
+    --success-color: #27ae60;
+    --success-dark: #229954;
+    --danger-color: #c0392b;
+    --danger-dark: #922b21;
+    --warning-color: #f39c12;
+    --element-stroke: #d35400;
+    --selection-glow: #e67e22;
+    --connection-point: #e67e22;
+}
+
+/* Green Theme */
+[data-theme="green"] {
+    --primary-color: #27ae60;
+    --primary-dark: #229954;
+    --primary-light: #2ecc71;
+    --header-bg: #16a085;
+    --accent-color: #27ae60;
+    --success-color: #27ae60;
+    --success-dark: #1e8449;
+    --danger-color: #e74c3c;
+    --danger-dark: #c0392b;
+    --warning-color: #f39c12;
+    --element-stroke: #16a085;
+    --selection-glow: #27ae60;
+    --connection-point: #27ae60;
+}
+
+/* Lavender Theme */
+[data-theme="lavender"] {
+    --primary-color: #9b59b6;
+    --primary-dark: #8e44ad;
+    --primary-light: #af7ac5;
+    --header-bg: #7d3c98;
+    --accent-color: #9b59b6;
+    --success-color: #27ae60;
+    --success-dark: #229954;
+    --danger-color: #e74c3c;
+    --danger-dark: #c0392b;
+    --warning-color: #f39c12;
+    --element-stroke: #7d3c98;
+    --selection-glow: #9b59b6;
+    --connection-point: #9b59b6;
+}
+
+/* Teal Theme */
+[data-theme="teal"] {
+    --primary-color: #16a085;
+    --primary-dark: #138d75;
+    --primary-light: #1abc9c;
+    --header-bg: #0e6655;
+    --accent-color: #16a085;
+    --success-color: #27ae60;
+    --success-dark: #229954;
+    --danger-color: #e74c3c;
+    --danger-dark: #c0392b;
+    --warning-color: #f39c12;
+    --element-stroke: #0e6655;
+    --selection-glow: #16a085;
+    --connection-point: #16a085;
+}
+
+/* Pink Theme */
+[data-theme="pink"] {
+    --primary-color: #e91e63;
+    --primary-dark: #c2185b;
+    --primary-light: #f06292;
+    --header-bg: #ad1457;
+    --accent-color: #e91e63;
+    --success-color: #27ae60;
+    --success-dark: #229954;
+    --danger-color: #d32f2f;
+    --danger-dark: #b71c1c;
+    --warning-color: #f39c12;
+    --element-stroke: #ad1457;
+    --selection-glow: #e91e63;
+    --connection-point: #e91e63;
+}
+
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     overflow: hidden;
@@ -16,8 +120,8 @@ body {
 }
 
 header {
-    background: #2c3e50;
-    color: white;
+    background: var(--header-bg);
+    color: var(--header-text);
     padding: 1rem 2rem;
     display: flex;
     justify-content: space-between;
@@ -36,7 +140,7 @@ header h1 {
 }
 
 .btn {
-    background: #3498db;
+    background: var(--primary-color);
     color: white;
     border: none;
     padding: 0.5rem 1rem;
@@ -47,7 +151,7 @@ header h1 {
 }
 
 .btn:hover {
-    background: #2980b9;
+    background: var(--primary-dark);
 }
 
 .btn-small {
@@ -66,13 +170,13 @@ header h1 {
 }
 
 .btn-danger {
-    background: #e74c3c;
+    background: var(--danger-color);
     color: white;
-    border-color: #c0392b;
+    border-color: var(--danger-dark);
 }
 
 .btn-danger:hover {
-    background: #c0392b;
+    background: var(--danger-dark);
 }
 
 .main-content {
@@ -217,7 +321,7 @@ header h1 {
 }
 
 .bpmn-element.selected {
-    filter: drop-shadow(0 0 4px #3498db);
+    filter: drop-shadow(0 0 4px var(--selection-glow));
 }
 
 .bpmn-pool {
@@ -233,36 +337,36 @@ header h1 {
 }
 
 .bpmn-task {
-    fill: white;
-    stroke: #2c3e50;
+    fill: var(--element-fill);
+    stroke: var(--element-stroke);
     stroke-width: 2;
 }
 
 .bpmn-event {
-    fill: white;
-    stroke: #2c3e50;
+    fill: var(--element-fill);
+    stroke: var(--element-stroke);
 }
 
 .bpmn-gateway {
-    fill: white;
-    stroke: #2c3e50;
+    fill: var(--element-fill);
+    stroke: var(--element-stroke);
     stroke-width: 2;
 }
 
 .bpmn-connection {
     fill: none;
-    stroke: #2c3e50;
+    stroke: var(--element-stroke);
     stroke-width: 2;
     cursor: pointer;
 }
 
 .bpmn-connection.selected {
-    stroke: #3498db;
+    stroke: var(--selection-glow);
     stroke-width: 3;
 }
 
 .connection-point {
-    fill: #3498db;
+    fill: var(--connection-point);
     stroke: white;
     stroke-width: 2;
     cursor: crosshair;
@@ -463,7 +567,7 @@ button:active:not(:disabled) {
 
 /* AG-UI Execution Styles */
 .bpmn-element.active {
-    filter: drop-shadow(0 0 8px #3498db);
+    filter: drop-shadow(0 0 8px var(--accent-color));
     animation: pulse 1.5s infinite;
 }
 
@@ -477,7 +581,7 @@ button:active:not(:disabled) {
 }
 
 .bpmn-element.error {
-    filter: drop-shadow(0 0 8px #e74c3c);
+    filter: drop-shadow(0 0 8px var(--danger-color));
 }
 
 .completion-mark {
@@ -500,7 +604,7 @@ button:active:not(:disabled) {
 }
 
 .bpmn-connection.active-flow {
-    stroke: #27ae60;
+    stroke: var(--success-color);
     stroke-width: 4;
     animation: flow 1s ease-in-out;
 }
@@ -571,7 +675,7 @@ button:active:not(:disabled) {
 }
 
 .modal-header {
-    background: #3498db;
+    background: var(--primary-color);
     color: white;
     padding: 1.5rem;
     display: flex;
@@ -663,19 +767,19 @@ button:active:not(:disabled) {
 }
 
 .approve-btn {
-    background: #27ae60;
+    background: var(--success-color);
 }
 
 .approve-btn:hover {
-    background: #229954;
+    background: var(--success-dark);
 }
 
 .reject-btn {
-    background: #e74c3c;
+    background: var(--danger-color);
 }
 
 .reject-btn:hover {
-    background: #c0392b;
+    background: var(--danger-dark);
 }
 
 /* Notifications */
@@ -772,12 +876,12 @@ button:active:not(:disabled) {
 
 /* Execute Button */
 .execute-workflow-btn {
-    background: #27ae60;
+    background: var(--success-color);
     margin-left: 1rem;
 }
 
 .execute-workflow-btn:hover {
-    background: #229954;
+    background: var(--success-dark);
 }
 
 /* Execution Modal */
@@ -835,3 +939,51 @@ button:active:not(:disabled) {
     padding-top: 1rem;
     border-top: 1px solid #dee2e6;
 }
+
+/* Theme Selector */
+.theme-selector {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-left: auto;
+    margin-right: 1rem;
+}
+
+.theme-selector label {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--header-text);
+}
+
+.theme-selector select {
+    padding: 0.4rem 0.8rem;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.2);
+    color: var(--header-text);
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.theme-selector select:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.theme-selector select:focus {
+    outline: none;
+    background: rgba(255, 255, 255, 0.4);
+}
+
+.theme-selector option {
+    background: white;
+    color: #2c3e50;
+}
+
+/* Theme Color Indicators */
+.theme-option-blue::before { content: '🔵 '; }
+.theme-option-orange::before { content: '🟠 '; }
+.theme-option-green::before { content: '🟢 '; }
+.theme-option-lavender::before { content: '🟣 '; }
+.theme-option-teal::before { content: '🔷 '; }
+.theme-option-pink::before { content: '🌸 '; }
