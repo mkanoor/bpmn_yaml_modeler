@@ -435,9 +435,14 @@ class SendTaskExecutor(TaskExecutor):
         if ngrok_url.endswith('/'):
             ngrok_url = ngrok_url[:-1]
 
+        # Debug logging
+        logger.info(f"Building approval URLs: message_ref={message_ref}, correlation_key='{correlation_key}'")
+
         # Build approval URLs
         approve_url = f"{ngrok_url}/webhooks/approve/{message_ref}/{correlation_key}"
         deny_url = f"{ngrok_url}/webhooks/deny/{message_ref}/{correlation_key}"
+
+        logger.info(f"Approval URL: {approve_url}")
 
         if html_format:
             # HTML format with styled buttons
