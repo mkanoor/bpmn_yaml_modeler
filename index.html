@@ -53,26 +53,26 @@
                 <div class="palette-section">
                     <h4>Events</h4>
                     <div class="palette-section-items">
-                    <div class="palette-item" data-type="startEvent">
+                    <div class="palette-item" data-type="startEvent" title="Start Event - Triggers the beginning of a workflow process">
                         <svg width="40" height="40">
                             <circle cx="20" cy="20" r="15" fill="white" stroke="#000" stroke-width="2"/>
                         </svg>
                         <span>Start</span>
                     </div>
-                    <div class="palette-item" data-type="endEvent">
+                    <div class="palette-item" data-type="endEvent" title="End Event - Marks the completion of a workflow process">
                         <svg width="40" height="40">
                             <circle cx="20" cy="20" r="15" fill="white" stroke="#000" stroke-width="4"/>
                         </svg>
                         <span>End</span>
                     </div>
-                    <div class="palette-item" data-type="intermediateEvent">
+                    <div class="palette-item" data-type="intermediateEvent" title="Intermediate Event - Occurs between start and end, can catch or throw events">
                         <svg width="40" height="40">
                             <circle cx="20" cy="20" r="15" fill="white" stroke="#000" stroke-width="2"/>
                             <circle cx="20" cy="20" r="12" fill="none" stroke="#000" stroke-width="2"/>
                         </svg>
                         <span>Intermediate</span>
                     </div>
-                    <div class="palette-item" data-type="timerIntermediateCatchEvent">
+                    <div class="palette-item" data-type="timerIntermediateCatchEvent" title="Timer Event - Waits for a specific time or duration before continuing">
                         <svg width="40" height="40">
                             <circle cx="20" cy="20" r="15" fill="white" stroke="#000" stroke-width="2"/>
                             <circle cx="20" cy="20" r="12" fill="none" stroke="#000" stroke-width="2"/>
@@ -83,7 +83,7 @@
                         </svg>
                         <span>Timer</span>
                     </div>
-                    <div class="palette-item" data-type="boundaryTimerEvent">
+                    <div class="palette-item" data-type="boundaryTimerEvent" title="Boundary Timer - Attaches to a task, triggers timeout or deadline handling">
                         <svg width="40" height="40">
                             <circle cx="20" cy="20" r="12" fill="white" stroke="#000" stroke-width="2"/>
                             <circle cx="20" cy="20" r="9" fill="none" stroke="#000" stroke-width="2"/>
@@ -100,13 +100,13 @@
                 <div class="palette-section">
                     <h4>Activities</h4>
                     <div class="palette-section-items">
-                    <div class="palette-item" data-type="task">
+                    <div class="palette-item" data-type="task" title="Task - Generic work unit that needs to be performed">
                         <svg width="40" height="40">
                             <rect x="5" y="10" width="30" height="20" rx="5" fill="white" stroke="#000" stroke-width="2"/>
                         </svg>
                         <span>Task</span>
                     </div>
-                    <div class="palette-item" data-type="userTask">
+                    <div class="palette-item" data-type="userTask" title="User Task - Work performed by a human user via a form or interface">
                         <svg width="40" height="40">
                             <rect x="5" y="10" width="30" height="20" rx="5" fill="white" stroke="#000" stroke-width="2"/>
                             <circle cx="11" cy="17" r="2" fill="none" stroke="#000" stroke-width="1"/>
@@ -114,7 +114,7 @@
                         </svg>
                         <span>User Task</span>
                     </div>
-                    <div class="palette-item" data-type="serviceTask">
+                    <div class="palette-item" data-type="serviceTask" title="Service Task - Automated work performed by an external system or API">
                         <svg width="40" height="40">
                             <rect x="5" y="10" width="30" height="20" rx="5" fill="white" stroke="#000" stroke-width="2"/>
                             <circle cx="11" cy="20" r="3" fill="none" stroke="#000" stroke-width="1"/>
@@ -125,7 +125,7 @@
                         </svg>
                         <span>Service Task</span>
                     </div>
-                    <div class="palette-item" data-type="scriptTask">
+                    <div class="palette-item" data-type="scriptTask" title="Script Task - Executes a script or code snippet (Python, JavaScript, etc.)">
                         <svg width="40" height="40">
                             <rect x="5" y="10" width="30" height="20" rx="5" fill="white" stroke="#000" stroke-width="2"/>
                             <!-- Scroll icon -->
@@ -138,7 +138,7 @@
                         </svg>
                         <span>Script Task</span>
                     </div>
-                    <div class="palette-item" data-type="sendTask">
+                    <div class="palette-item" data-type="sendTask" title="Send Task - Sends a message, email, or notification to external parties">
                         <svg width="40" height="40">
                             <rect x="5" y="10" width="30" height="20" rx="5" fill="white" stroke="#000" stroke-width="2"/>
                             <path d="M 7 18 L 7 23 L 15 23 L 15 18 Z" fill="#000" stroke="#000" stroke-width="1"/>
@@ -146,7 +146,7 @@
                         </svg>
                         <span>Send Task</span>
                     </div>
-                    <div class="palette-item" data-type="receiveTask">
+                    <div class="palette-item" data-type="receiveTask" title="Receive Task - Waits for an incoming message or signal before continuing">
                         <svg width="40" height="40">
                             <rect x="5" y="10" width="30" height="20" rx="5" fill="white" stroke="#000" stroke-width="2"/>
                             <path d="M 7 18 L 7 23 L 15 23 L 15 18 Z" fill="white" stroke="#000" stroke-width="1"/>
@@ -154,14 +154,14 @@
                         </svg>
                         <span>Receive Task</span>
                     </div>
-                    <div class="palette-item" data-type="manualTask">
+                    <div class="palette-item" data-type="manualTask" title="Manual Task - Physical work done by a person without system interaction">
                         <svg width="40" height="40">
                             <rect x="5" y="10" width="30" height="20" rx="5" fill="white" stroke="#000" stroke-width="2"/>
                             <path d="M 8 21 L 8 18 L 11 18 L 11 16 L 12 16 L 12 19 L 10 19 L 10 21 Z" fill="none" stroke="#000" stroke-width="1"/>
                         </svg>
                         <span>Manual Task</span>
                     </div>
-                    <div class="palette-item" data-type="businessRuleTask">
+                    <div class="palette-item" data-type="businessRuleTask" title="Business Rule Task - Evaluates business rules or decision tables">
                         <svg width="40" height="40">
                             <rect x="5" y="10" width="30" height="20" rx="5" fill="white" stroke="#000" stroke-width="2"/>
                             <rect x="8" y="17" width="8" height="6" fill="none" stroke="#000" stroke-width="1"/>
@@ -170,7 +170,7 @@
                         </svg>
                         <span>Business Rule</span>
                     </div>
-                    <div class="palette-item" data-type="subProcess">
+                    <div class="palette-item" data-type="subProcess" title="Sub-Process - Container for a nested workflow with internal elements">
                         <svg width="40" height="40">
                             <rect x="5" y="10" width="30" height="20" rx="5" fill="white" stroke="#000" stroke-width="2"/>
                             <rect x="17" y="26" width="6" height="6" fill="none" stroke="#000" stroke-width="1"/>
@@ -179,7 +179,7 @@
                         </svg>
                         <span>Sub-Process</span>
                     </div>
-                    <div class="palette-item" data-type="callActivity">
+                    <div class="palette-item" data-type="callActivity" title="Call Activity - Calls and executes another reusable workflow process">
                         <svg width="40" height="40">
                             <rect x="5" y="10" width="30" height="20" rx="5" fill="white" stroke="#000" stroke-width="4"/>
                         </svg>
@@ -191,7 +191,7 @@
                 <div class="palette-section">
                     <h4>Custom Tasks</h4>
                     <div class="palette-section-items">
-                    <div class="palette-item" data-type="agenticTask">
+                    <div class="palette-item" data-type="agenticTask" title="Agentic Task - AI/LLM-powered task using MCP tools for intelligent automation">
                         <svg width="40" height="40">
                             <rect x="5" y="10" width="30" height="20" rx="5" fill="white" stroke="#000" stroke-width="2"/>
                             <!-- Brain icon -->
@@ -209,21 +209,21 @@
                 <div class="palette-section">
                     <h4>Gateways</h4>
                     <div class="palette-section-items">
-                    <div class="palette-item" data-type="exclusiveGateway">
+                    <div class="palette-item" data-type="exclusiveGateway" title="Exclusive Gateway (XOR) - Routes flow to ONE path based on conditions">
                         <svg width="40" height="40">
                             <path d="M 20 5 L 35 20 L 20 35 L 5 20 Z" fill="white" stroke="#000" stroke-width="2"/>
                             <text x="20" y="27" text-anchor="middle" font-size="20" font-weight="bold">×</text>
                         </svg>
                         <span>Exclusive</span>
                     </div>
-                    <div class="palette-item" data-type="parallelGateway">
+                    <div class="palette-item" data-type="parallelGateway" title="Parallel Gateway (AND) - Splits flow to ALL paths simultaneously">
                         <svg width="40" height="40">
                             <path d="M 20 5 L 35 20 L 20 35 L 5 20 Z" fill="white" stroke="#000" stroke-width="2"/>
                             <text x="20" y="26" text-anchor="middle" font-size="20" font-weight="bold">+</text>
                         </svg>
                         <span>Parallel</span>
                     </div>
-                    <div class="palette-item" data-type="inclusiveGateway">
+                    <div class="palette-item" data-type="inclusiveGateway" title="Inclusive Gateway (OR) - Routes to one or more paths, merges when first completes">
                         <svg width="40" height="40">
                             <path d="M 20 5 L 35 20 L 20 35 L 5 20 Z" fill="white" stroke="#000" stroke-width="2"/>
                             <circle cx="20" cy="20" r="8" fill="none" stroke="#000" stroke-width="2"/>
@@ -236,13 +236,13 @@
                 <div class="palette-section">
                     <h4>Swimlanes</h4>
                     <div class="palette-section-items">
-                    <div class="palette-item" data-type="pool">
+                    <div class="palette-item" data-type="pool" title="Pool - Container representing a participant or organization in the workflow">
                         <svg width="40" height="40">
                             <rect x="5" y="10" width="30" height="20" fill="#e8f4f8" stroke="#000" stroke-width="2"/>
                         </svg>
                         <span>Pool</span>
                     </div>
-                    <div class="palette-item" data-type="lane">
+                    <div class="palette-item" data-type="lane" title="Lane - Sub-division within a pool representing roles or departments">
                         <svg width="40" height="40">
                             <rect x="5" y="10" width="30" height="20" fill="#f0f8ff" stroke="#000" stroke-width="1"/>
                         </svg>
@@ -254,7 +254,7 @@
                 <div class="palette-section">
                     <h4>Connections</h4>
                     <div class="palette-section-items">
-                    <div class="palette-item" data-type="sequenceFlow">
+                    <div class="palette-item" data-type="sequenceFlow" title="Sequence Flow - Connects elements showing the order of execution">
                         <svg width="40" height="40">
                             <line x1="5" y1="20" x2="30" y2="20" stroke="#000" stroke-width="2"/>
                             <polygon points="30,20 25,17 25,23" fill="#000"/>
