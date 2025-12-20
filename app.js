@@ -600,29 +600,61 @@ class BPMNModeler {
                         g.appendChild(line);
                     });
                 } else if (element.type === 'scriptTask') {
-                    // Script/document icon - positioned in top-left corner
-                    const scriptPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                    scriptPath.setAttribute('d', 'M -54 -32 L -52 -32 L -50 -30 L -52 -28 L -54 -28');
-                    scriptPath.setAttribute('fill', 'none');
-                    scriptPath.setAttribute('stroke', '#000');
-                    scriptPath.setAttribute('stroke-width', 1);
-                    g.appendChild(scriptPath);
-                    const line1 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-                    line1.setAttribute('x1', -48);
-                    line1.setAttribute('y1', -30);
-                    line1.setAttribute('x2', -42);
-                    line1.setAttribute('y2', -30);
-                    line1.setAttribute('stroke', '#000');
-                    line1.setAttribute('stroke-width', 1);
-                    g.appendChild(line1);
-                    const line2 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-                    line2.setAttribute('x1', -54);
-                    line2.setAttribute('y1', -26);
-                    line2.setAttribute('x2', -48);
-                    line2.setAttribute('y2', -26);
-                    line2.setAttribute('stroke', '#000');
-                    line2.setAttribute('stroke-width', 1);
-                    g.appendChild(line2);
+                    // Scroll icon - positioned in top-left corner
+                    // Main scroll body (rectangle)
+                    const scrollBody = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                    scrollBody.setAttribute('x', -54);
+                    scrollBody.setAttribute('y', -32);
+                    scrollBody.setAttribute('width', 12);
+                    scrollBody.setAttribute('height', 10);
+                    scrollBody.setAttribute('fill', 'none');
+                    scrollBody.setAttribute('stroke', '#000');
+                    scrollBody.setAttribute('stroke-width', 1);
+                    g.appendChild(scrollBody);
+
+                    // Top scroll roll (curved edge at top)
+                    const topRoll = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                    topRoll.setAttribute('d', 'M -54 -32 Q -48 -34 -42 -32');
+                    topRoll.setAttribute('fill', 'none');
+                    topRoll.setAttribute('stroke', '#000');
+                    topRoll.setAttribute('stroke-width', 1);
+                    g.appendChild(topRoll);
+
+                    // Bottom scroll roll (curved edge at bottom)
+                    const bottomRoll = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                    bottomRoll.setAttribute('d', 'M -54 -22 Q -48 -20 -42 -22');
+                    bottomRoll.setAttribute('fill', 'none');
+                    bottomRoll.setAttribute('stroke', '#000');
+                    bottomRoll.setAttribute('stroke-width', 1);
+                    g.appendChild(bottomRoll);
+
+                    // Script lines on scroll (3 horizontal lines)
+                    const scriptLine1 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                    scriptLine1.setAttribute('x1', -52);
+                    scriptLine1.setAttribute('y1', -30);
+                    scriptLine1.setAttribute('x2', -44);
+                    scriptLine1.setAttribute('y2', -30);
+                    scriptLine1.setAttribute('stroke', '#000');
+                    scriptLine1.setAttribute('stroke-width', 0.8);
+                    g.appendChild(scriptLine1);
+
+                    const scriptLine2 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                    scriptLine2.setAttribute('x1', -52);
+                    scriptLine2.setAttribute('y1', -27);
+                    scriptLine2.setAttribute('x2', -44);
+                    scriptLine2.setAttribute('y2', -27);
+                    scriptLine2.setAttribute('stroke', '#000');
+                    scriptLine2.setAttribute('stroke-width', 0.8);
+                    g.appendChild(scriptLine2);
+
+                    const scriptLine3 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                    scriptLine3.setAttribute('x1', -52);
+                    scriptLine3.setAttribute('y1', -24);
+                    scriptLine3.setAttribute('x2', -44);
+                    scriptLine3.setAttribute('y2', -24);
+                    scriptLine3.setAttribute('stroke', '#000');
+                    scriptLine3.setAttribute('stroke-width', 0.8);
+                    g.appendChild(scriptLine3);
                 } else if (element.type === 'sendTask') {
                     // Filled envelope - positioned in top-left corner
                     const envelope = document.createElementNS('http://www.w3.org/2000/svg', 'path');
