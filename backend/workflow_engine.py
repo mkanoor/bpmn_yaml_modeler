@@ -50,6 +50,9 @@ class WorkflowEngine:
         self.start_time = datetime.now(timezone.utc)
         self.context = initial_context or {}
 
+        # Add instance ID to context for use in workflows (e.g., approval correlation keys)
+        self.context['workflowInstanceId'] = self.instance_id
+
         logger.info(f"Starting workflow execution: {self.instance_id}")
 
         # Broadcast workflow started
