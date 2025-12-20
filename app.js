@@ -500,8 +500,8 @@ class BPMNModeler {
             case 'callActivity':
                 // Determine size based on expansion state
                 const isExpanded = element.type === 'subProcess' && element.expanded;
-                const width = isExpanded ? element.width : 100;
-                const height = isExpanded ? element.height : 60;
+                const width = isExpanded ? element.width : 120;  // Increased from 100 to 120
+                const height = isExpanded ? element.height : 80; // Increased from 60 to 80
                 const halfWidth = width / 2;
                 const halfHeight = height / 2;
 
@@ -687,43 +687,57 @@ class BPMNModeler {
                     vLine.setAttribute('stroke-width', 1);
                     g.appendChild(vLine);
                 } else if (element.type === 'agenticTask') {
-                    // AI/Robot icon (custom extension)
+                    // Brain icon (AI/LLM indicator)
                     const aiColor = '#6366f1'; // Indigo color for AI
 
-                    // Robot head (circle with inner dot)
-                    const headCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-                    headCircle.setAttribute('cx', -40);
-                    headCircle.setAttribute('cy', -16);
-                    headCircle.setAttribute('r', 4);
-                    headCircle.setAttribute('fill', 'none');
-                    headCircle.setAttribute('stroke', aiColor);
-                    headCircle.setAttribute('stroke-width', 1.5);
-                    g.appendChild(headCircle);
+                    // Brain outline (simplified brain shape)
+                    const brainPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                    brainPath.setAttribute('d', 'M -50 -30 C -52 -32 -52 -34 -50 -36 C -48 -38 -44 -38 -42 -36 C -41 -38 -39 -38 -38 -36 C -36 -38 -32 -38 -30 -36 C -28 -34 -28 -32 -30 -30 C -30 -28 -30 -26 -32 -24 C -34 -22 -36 -22 -38 -24 C -39 -22 -41 -22 -42 -24 C -44 -22 -46 -22 -48 -24 C -50 -26 -50 -28 -50 -30 Z');
+                    brainPath.setAttribute('fill', 'none');
+                    brainPath.setAttribute('stroke', aiColor);
+                    brainPath.setAttribute('stroke-width', 1.5);
+                    g.appendChild(brainPath);
 
-                    const eyeDot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-                    eyeDot.setAttribute('cx', -40);
-                    eyeDot.setAttribute('cy', -16);
-                    eyeDot.setAttribute('r', 1.5);
-                    eyeDot.setAttribute('fill', aiColor);
-                    g.appendChild(eyeDot);
+                    // Brain folds/wrinkles (left hemisphere)
+                    const fold1 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                    fold1.setAttribute('d', 'M -48 -32 Q -46 -30 -46 -28');
+                    fold1.setAttribute('fill', 'none');
+                    fold1.setAttribute('stroke', aiColor);
+                    fold1.setAttribute('stroke-width', 1);
+                    g.appendChild(fold1);
 
-                    // Robot body
-                    const body = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                    body.setAttribute('d', 'M -43 -10 L -43 -8 L -37 -8 L -37 -10 L -38 -10 L -38 -12 L -42 -12 L -42 -10 Z');
-                    body.setAttribute('fill', 'none');
-                    body.setAttribute('stroke', aiColor);
-                    body.setAttribute('stroke-width', 1.5);
-                    g.appendChild(body);
+                    const fold2 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                    fold2.setAttribute('d', 'M -44 -34 Q -42 -32 -42 -30');
+                    fold2.setAttribute('fill', 'none');
+                    fold2.setAttribute('stroke', aiColor);
+                    fold2.setAttribute('stroke-width', 1);
+                    g.appendChild(fold2);
 
-                    // Antenna
-                    const antenna = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-                    antenna.setAttribute('x1', -40);
-                    antenna.setAttribute('y1', -20);
-                    antenna.setAttribute('x2', -40);
-                    antenna.setAttribute('y2', -22);
-                    antenna.setAttribute('stroke', aiColor);
-                    antenna.setAttribute('stroke-width', 1.5);
-                    g.appendChild(antenna);
+                    // Brain folds/wrinkles (right hemisphere)
+                    const fold3 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                    fold3.setAttribute('d', 'M -38 -34 Q -36 -32 -36 -30');
+                    fold3.setAttribute('fill', 'none');
+                    fold3.setAttribute('stroke', aiColor);
+                    fold3.setAttribute('stroke-width', 1);
+                    g.appendChild(fold3);
+
+                    const fold4 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                    fold4.setAttribute('d', 'M -34 -32 Q -32 -30 -32 -28');
+                    fold4.setAttribute('fill', 'none');
+                    fold4.setAttribute('stroke', aiColor);
+                    fold4.setAttribute('stroke-width', 1);
+                    g.appendChild(fold4);
+
+                    // Center line (corpus callosum)
+                    const centerLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                    centerLine.setAttribute('x1', -40);
+                    centerLine.setAttribute('y1', -36);
+                    centerLine.setAttribute('x2', -40);
+                    centerLine.setAttribute('y2', -24);
+                    centerLine.setAttribute('stroke', aiColor);
+                    centerLine.setAttribute('stroke-width', 0.8);
+                    centerLine.setAttribute('stroke-dasharray', '2,1');
+                    g.appendChild(centerLine);
                 }
                 break;
 
@@ -810,10 +824,10 @@ class BPMNModeler {
                    element.type === 'scriptTask' || element.type === 'sendTask' || element.type === 'receiveTask' ||
                    element.type === 'manualTask' || element.type === 'businessRuleTask' || element.type === 'agenticTask' ||
                    element.type === 'subProcess' || element.type === 'callActivity') {
-            points.push({ x: 50, y: 0 }); // right
-            points.push({ x: -50, y: 0 }); // left
-            points.push({ x: 0, y: -30 }); // top
-            points.push({ x: 0, y: 30 }); // bottom
+            points.push({ x: 60, y: 0 }); // right (increased from 50 to 60)
+            points.push({ x: -60, y: 0 }); // left (increased from 50 to 60)
+            points.push({ x: 0, y: -40 }); // top (increased from 30 to 40)
+            points.push({ x: 0, y: 40 }); // bottom (increased from 30 to 40)
         } else if (element.type.includes('Gateway')) {
             points.push({ x: 25, y: 0 }); // right
             points.push({ x: -25, y: 0 }); // left
