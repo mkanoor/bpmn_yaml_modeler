@@ -201,7 +201,7 @@ header h1 {
 }
 
 .palette-section {
-    margin-bottom: 1.5rem;
+    margin-bottom: 1rem;
 }
 
 .palette-section h4 {
@@ -210,6 +210,42 @@ header h1 {
     margin-bottom: 0.5rem;
     text-transform: uppercase;
     font-weight: 600;
+    cursor: pointer;
+    padding: 0.5rem;
+    margin: 0 -0.5rem 0.5rem -0.5rem;
+    border-radius: 4px;
+    transition: all 0.2s;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.palette-section h4:hover {
+    background: rgba(0, 0, 0, 0.05);
+    color: var(--primary-color);
+}
+
+.palette-section h4::after {
+    content: '▼';
+    font-size: 0.7rem;
+    transition: transform 0.2s;
+}
+
+.palette-section.collapsed h4::after {
+    transform: rotate(-90deg);
+}
+
+.palette-section-items {
+    max-height: 1000px;
+    overflow: hidden;
+    transition: max-height 0.3s ease-out, opacity 0.3s ease-out;
+    opacity: 1;
+}
+
+.palette-section.collapsed .palette-section-items {
+    max-height: 0;
+    opacity: 0;
 }
 
 .palette-item {

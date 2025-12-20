@@ -36,6 +36,7 @@ class BPMNModeler {
         this.setupPalette();
         this.setupThemeSelector();
         this.loadTheme();
+        this.setupCollapsibleSections();
     }
 
     setupEventListeners() {
@@ -2328,6 +2329,34 @@ Your tasks:
             redoBtn.disabled = this.redoStack.length === 0;
             redoBtn.style.opacity = this.redoStack.length === 0 ? '0.5' : '1';
         }
+    }
+
+    // ===== COLLAPSIBLE PALETTE SECTIONS =====
+
+    setupCollapsibleSections() {
+        const sections = document.querySelectorAll('.palette-section');
+
+        sections.forEach(section => {
+            const header = section.querySelector('h4');
+            if (!header) return;
+
+            // Load collapsed state from localStorage
+            const sectionName = header.textContent.trim();
+            const isCollapsed = localStorage.getItem(`palette-section-${sectionName}`) === 'true';
+
+            if (isCollapsed) {
+                section.classList.add('collapsed');
+            }
+
+            // Add click handler
+            header.addEventListener('click', () => {
+                section.classList.toggle('collapsed');
+
+                // Save state to localStorage
+                const collapsed = section.classList.contains('collapsed');
+                localStorage.setItem(`palette-section-${sectionName}`, collapsed);
+            });
+        });
     }
 
     // ===== THEME MANAGEMENT =====
