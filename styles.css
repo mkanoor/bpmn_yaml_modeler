@@ -108,6 +108,214 @@
     --connection-point: #e91e63;
 }
 
+/* ===== PANTONE COLOR OF THE YEAR THEMES ===== */
+
+/* Viva Magenta (2023) - PANTONE 18-1750 */
+[data-theme="viva-magenta"] {
+    --primary-color: #be3455;
+    --primary-dark: #9e2841;
+    --primary-light: #d14968;
+    --header-bg: #8b1f3a;
+    --accent-color: #be3455;
+    --success-color: #27ae60;
+    --success-dark: #229954;
+    --danger-color: #c0392b;
+    --danger-dark: #922b21;
+    --warning-color: #f39c12;
+    --element-stroke: #8b1f3a;
+    --selection-glow: #be3455;
+    --connection-point: #be3455;
+}
+
+/* Very Peri (2022) - PANTONE 17-3938 */
+[data-theme="very-peri"] {
+    --primary-color: #6667ab;
+    --primary-dark: #545592;
+    --primary-light: #8283c5;
+    --header-bg: #4a4b7c;
+    --accent-color: #6667ab;
+    --success-color: #27ae60;
+    --success-dark: #229954;
+    --danger-color: #e74c3c;
+    --danger-dark: #c0392b;
+    --warning-color: #f39c12;
+    --element-stroke: #4a4b7c;
+    --selection-glow: #6667ab;
+    --connection-point: #6667ab;
+}
+
+/* Illuminating + Ultimate Gray (2021) - PANTONE 13-0647 + 17-5104 */
+[data-theme="illuminating"] {
+    --primary-color: #f5df4d;
+    --primary-dark: #c4b333;
+    --primary-light: #f8e87a;
+    --header-bg: #939597;
+    --header-text: #2c3e50;
+    --accent-color: #f5df4d;
+    --success-color: #27ae60;
+    --success-dark: #229954;
+    --danger-color: #e74c3c;
+    --danger-dark: #c0392b;
+    --warning-color: #f39c12;
+    --element-stroke: #939597;
+    --selection-glow: #f5df4d;
+    --connection-point: #f5df4d;
+}
+
+/* Classic Blue (2020) - PANTONE 19-4052 */
+[data-theme="classic-blue"] {
+    --primary-color: #0f4c81;
+    --primary-dark: #0a3a5f;
+    --primary-light: #2876b8;
+    --header-bg: #083556;
+    --accent-color: #0f4c81;
+    --success-color: #27ae60;
+    --success-dark: #229954;
+    --danger-color: #e74c3c;
+    --danger-dark: #c0392b;
+    --warning-color: #f39c12;
+    --element-stroke: #083556;
+    --selection-glow: #0f4c81;
+    --connection-point: #0f4c81;
+}
+
+/* Living Coral (2019) - PANTONE 16-1546 */
+[data-theme="living-coral"] {
+    --primary-color: #ff6f61;
+    --primary-dark: #e8554a;
+    --primary-light: #ff9085;
+    --header-bg: #d14537;
+    --accent-color: #ff6f61;
+    --success-color: #27ae60;
+    --success-dark: #229954;
+    --danger-color: #c0392b;
+    --danger-dark: #922b21;
+    --warning-color: #f39c12;
+    --element-stroke: #d14537;
+    --selection-glow: #ff6f61;
+    --connection-point: #ff6f61;
+}
+
+/* Ultra Violet (2018) - PANTONE 18-3838 */
+[data-theme="ultra-violet"] {
+    --primary-color: #5f4b8b;
+    --primary-dark: #4a3a6d;
+    --primary-light: #7d66a8;
+    --header-bg: #3f2d5c;
+    --accent-color: #5f4b8b;
+    --success-color: #27ae60;
+    --success-dark: #229954;
+    --danger-color: #e74c3c;
+    --danger-dark: #c0392b;
+    --warning-color: #f39c12;
+    --element-stroke: #3f2d5c;
+    --selection-glow: #5f4b8b;
+    --connection-point: #5f4b8b;
+}
+
+/* Greenery (2017) - PANTONE 15-0343 */
+[data-theme="greenery"] {
+    --primary-color: #88b04b;
+    --primary-dark: #6d8f3c;
+    --primary-light: #a3c561;
+    --header-bg: #5a7431;
+    --accent-color: #88b04b;
+    --success-color: #88b04b;
+    --success-dark: #6d8f3c;
+    --danger-color: #e74c3c;
+    --danger-dark: #c0392b;
+    --warning-color: #f39c12;
+    --element-stroke: #5a7431;
+    --selection-glow: #88b04b;
+    --connection-point: #88b04b;
+}
+
+/* Rose Quartz & Serenity (2016) - PANTONE 13-1520 + 15-3919 */
+[data-theme="rose-quartz"] {
+    --primary-color: #f7cac9;
+    --primary-dark: #d4a5a3;
+    --primary-light: #fae3e3;
+    --header-bg: #91a8d0;
+    --header-text: #2c3e50;
+    --accent-color: #f7cac9;
+    --success-color: #27ae60;
+    --success-dark: #229954;
+    --danger-color: #e74c3c;
+    --danger-dark: #c0392b;
+    --warning-color: #f39c12;
+    --element-stroke: #91a8d0;
+    --selection-glow: #f7cac9;
+    --connection-point: #f7cac9;
+}
+
+/* Marsala (2015) - PANTONE 18-1438 */
+[data-theme="marsala"] {
+    --primary-color: #955251;
+    --primary-dark: #75403f;
+    --primary-light: #b16e6d;
+    --header-bg: #5f3332;
+    --accent-color: #955251;
+    --success-color: #27ae60;
+    --success-dark: #229954;
+    --danger-color: #c0392b;
+    --danger-dark: #922b21;
+    --warning-color: #f39c12;
+    --element-stroke: #5f3332;
+    --selection-glow: #955251;
+    --connection-point: #955251;
+}
+
+/* Radiant Orchid (2014) - PANTONE 18-3224 */
+[data-theme="radiant-orchid"] {
+    --primary-color: #b565a7;
+    --primary-dark: #924f86;
+    --primary-light: #ca85bc;
+    --header-bg: #793a6d;
+    --accent-color: #b565a7;
+    --success-color: #27ae60;
+    --success-dark: #229954;
+    --danger-color: #e74c3c;
+    --danger-dark: #c0392b;
+    --warning-color: #f39c12;
+    --element-stroke: #793a6d;
+    --selection-glow: #b565a7;
+    --connection-point: #b565a7;
+}
+
+/* Emerald (2013) - PANTONE 17-5641 */
+[data-theme="emerald"] {
+    --primary-color: #009b77;
+    --primary-dark: #007a5e;
+    --primary-light: #00c497;
+    --header-bg: #00614a;
+    --accent-color: #009b77;
+    --success-color: #009b77;
+    --success-dark: #007a5e;
+    --danger-color: #e74c3c;
+    --danger-dark: #c0392b;
+    --warning-color: #f39c12;
+    --element-stroke: #00614a;
+    --selection-glow: #009b77;
+    --connection-point: #009b77;
+}
+
+/* Tangerine Tango (2012) - PANTONE 17-1463 */
+[data-theme="tangerine-tango"] {
+    --primary-color: #dd4124;
+    --primary-dark: #b8341c;
+    --primary-light: #e9664f;
+    --header-bg: #a02917;
+    --accent-color: #dd4124;
+    --success-color: #27ae60;
+    --success-dark: #229954;
+    --danger-color: #c0392b;
+    --danger-dark: #922b21;
+    --warning-color: #f39c12;
+    --element-stroke: #a02917;
+    --selection-glow: #dd4124;
+    --connection-point: #dd4124;
+}
+
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     overflow: hidden;
