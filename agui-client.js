@@ -143,6 +143,30 @@ class AGUIClient {
                 this.handleTaskCancelled(message);
                 break;
 
+            case 'text.message.start':
+                this.handleTextMessageStart(message);
+                break;
+
+            case 'text.message.content':
+                this.handleTextMessageContent(message);
+                break;
+
+            case 'text.message.end':
+                this.handleTextMessageEnd(message);
+                break;
+
+            case 'task.thinking':
+                this.handleTaskThinking(message);
+                break;
+
+            case 'task.tool.start':
+                this.handleTaskToolStart(message);
+                break;
+
+            case 'task.tool.end':
+                this.handleTaskToolEnd(message);
+                break;
+
             case 'pong':
                 // Ping response
                 break;
@@ -794,6 +818,179 @@ class AGUIClient {
 
         // Remove all path indicators (checkmarks and X marks)
         document.querySelectorAll('.path-indicator').forEach(indicator => indicator.remove());
+
+        // Clear all feedback panels
+        document.querySelectorAll('.task-feedback-panel').forEach(panel => panel.remove());
+    }
+
+    // AG-UI Streaming Feedback Handlers
+
+    handleTextMessageStart(message) {
+        console.log('📝 Text message start:', message.elementId, message.messageId);
+
+        const panel = this.getOrCreateFeedbackPanel(message.elementId);
+        const messageContainer = document.createElement('div');
+        messageContainer.className = 'feedback-message';
+        messageContainer.setAttribute('data-message-id', message.messageId);
+        messageContainer.innerHTML = '<span class="typing-indicator">●●●</span>';
+
+        panel.appendChild(messageContainer);
+        this.showFeedbackIcon(message.elementId);
+    }
+
+    handleTextMessageContent(message) {
+        const panel = this.getOrCreateFeedbackPanel(message.elementId);
+        const messageContainer = panel.querySelector(`[data-message-id="${message.messageId}"]`);
+
+        if (messageContainer) {
+            // Remove typing indicator if present
+            const typingIndicator = messageContainer.querySelector('.typing-indicator');
+            if (typingIndicator) {
+                typingIndicator.remove();
+            }
+
+            // Append delta (new chunk) or replace with full content
+            if (message.delta) {
+                messageContainer.textContent += message.delta;
+            } else {
+                messageContainer.textContent = message.content;
+            }
+        }
+    }
+
+    handleTextMessageEnd(message) {
+        console.log('✅ Text message complete:', message.elementId, message.messageId);
+
+        const panel = this.getOrCreateFeedbackPanel(message.elementId);
+        const messageContainer = panel.querySelector(`[data-message-id="${message.messageId}"]`);
+
+        if (messageContainer) {
+            // Remove typing indicator
+            const typingIndicator = messageContainer.querySelector('.typing-indicator');
+            if (typingIndicator) {
+                typingIndicator.remove();
+            }
+
+            // Mark as complete
+            messageContainer.classList.add('complete');
+        }
+    }
+
+    handleTaskThinking(message) {
+        console.log('🤔 Task thinking:', message.elementId);
+
+        const panel = this.getOrCreateFeedbackPanel(message.elementId);
+        const thinkingDiv = document.createElement('div');
+        thinkingDiv.className = 'feedback-thinking';
+        thinkingDiv.innerHTML = `
+            <span class="thinking-icon">🤔</span>
+            <span class="thinking-text">${message.message || 'Thinking...'}</span>
+        `;
+
+        panel.appendChild(thinkingDiv);
+        this.showFeedbackIcon(message.elementId);
+
+        // Remove thinking indicator after a moment (will be replaced by actual content)
+        setTimeout(() => {
+            if (thinkingDiv.parentNode) {
+                thinkingDiv.remove();
+            }
+        }, 10000); // Remove after 10s if not replaced
+    }
+
+    handleTaskToolStart(message) {
+        console.log('🔧 Tool start:', message.elementId, message.toolName);
+
+        const panel = this.getOrCreateFeedbackPanel(message.elementId);
+        const toolDiv = document.createElement('div');
+        toolDiv.className = 'feedback-tool';
+        toolDiv.setAttribute('data-tool', message.toolName);
+        toolDiv.innerHTML = `
+            <span class="tool-icon">🔧</span>
+            <span class="tool-name">${message.toolName}</span>
+            <span class="tool-status">Running...</span>
+        `;
+
+        panel.appendChild(toolDiv);
+        this.showFeedbackIcon(message.elementId);
+    }
+
+    handleTaskToolEnd(message) {
+        console.log('✅ Tool complete:', message.elementId, message.toolName);
+
+        const panel = this.getOrCreateFeedbackPanel(message.elementId);
+        const toolDiv = panel.querySelector(`[data-tool="${message.toolName}"]`);
+
+        if (toolDiv) {
+            const statusSpan = toolDiv.querySelector('.tool-status');
+            if (statusSpan) {
+                statusSpan.textContent = 'Complete';
+                statusSpan.classList.add('complete');
+            }
+        }
+    }
+
+    getOrCreateFeedbackPanel(elementId) {
+        let panel = document.getElementById(`feedback-panel-${elementId}`);
+
+        if (!panel) {
+            panel = document.createElement('div');
+            panel.id = `feedback-panel-${elementId}`;
+            panel.className = 'task-feedback-panel';
+            panel.innerHTML = `
+                <div class="feedback-header">
+                    <span class="feedback-title">Task Activity</span>
+                    <button class="feedback-close" onclick="this.parentElement.parentElement.remove()">×</button>
+                </div>
+                <div class="feedback-content"></div>
+            `;
+
+            // Position near the element
+            const element = document.querySelector(`[data-id="${elementId}"]`);
+            if (element) {
+                const rect = element.getBoundingClientRect();
+                panel.style.position = 'fixed';
+                panel.style.left = `${rect.right + 20}px`;
+                panel.style.top = `${rect.top}px`;
+            }
+
+            document.body.appendChild(panel);
+        }
+
+        return panel.querySelector('.feedback-content') || panel;
+    }
+
+    showFeedbackIcon(elementId) {
+        const element = document.querySelector(`[data-id="${elementId}"]`);
+        if (!element) return;
+
+        // Check if icon already exists
+        let icon = element.querySelector('.feedback-icon');
+        if (icon) {
+            // Pulse the existing icon
+            icon.classList.add('pulse');
+            setTimeout(() => icon.classList.remove('pulse'), 500);
+            return;
+        }
+
+        // Create feedback icon
+        icon = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        icon.setAttribute('class', 'feedback-icon');
+        icon.setAttribute('x', '-30');
+        icon.setAttribute('y', '-20');
+        icon.setAttribute('font-size', '24');
+        icon.setAttribute('cursor', 'pointer');
+        icon.textContent = '💬';
+
+        // Click to toggle feedback panel
+        icon.addEventListener('click', () => {
+            const panel = document.getElementById(`feedback-panel-${elementId}`);
+            if (panel) {
+                panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+            }
+        });
+
+        element.appendChild(icon);
     }
 
     send(message) {

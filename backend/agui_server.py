@@ -236,3 +236,62 @@ class AGUIServer:
         })
 
         logger.info(f"✅ task.cancelled event sent successfully")
+
+    # AG-UI Streaming Events (for real-time task feedback)
+
+    async def send_text_message_start(self, element_id: str, message_id: str = None):
+        """Signal start of a new streaming message from a task"""
+        import uuid
+        msg_id = message_id or str(uuid.uuid4())
+
+        await self.send_update({
+            'type': 'text.message.start',
+            'elementId': element_id,
+            'messageId': msg_id
+        })
+
+        return msg_id
+
+    async def send_text_message_content(self, element_id: str, message_id: str, content: str, delta: str = None):
+        """Send partial content for a streaming message"""
+        await self.send_update({
+            'type': 'text.message.content',
+            'elementId': element_id,
+            'messageId': message_id,
+            'content': content,
+            'delta': delta or content  # Delta is the new chunk, content is cumulative
+        })
+
+    async def send_text_message_end(self, element_id: str, message_id: str):
+        """Signal end of a streaming message"""
+        await self.send_update({
+            'type': 'text.message.end',
+            'elementId': element_id,
+            'messageId': message_id
+        })
+
+    async def send_task_thinking(self, element_id: str, message: str = "Thinking..."):
+        """Show thinking indicator for a task"""
+        await self.send_update({
+            'type': 'task.thinking',
+            'elementId': element_id,
+            'message': message
+        })
+
+    async def send_task_tool_start(self, element_id: str, tool_name: str, tool_args: Dict[str, Any]):
+        """Signal start of tool execution"""
+        await self.send_update({
+            'type': 'task.tool.start',
+            'elementId': element_id,
+            'toolName': tool_name,
+            'toolArgs': tool_args
+        })
+
+    async def send_task_tool_end(self, element_id: str, tool_name: str, result: Any = None):
+        """Signal end of tool execution"""
+        await self.send_update({
+            'type': 'task.tool.end',
+            'elementId': element_id,
+            'toolName': tool_name,
+            'result': result
+        })

@@ -704,6 +704,10 @@ class AgenticTaskExecutor(TaskExecutor):
         confidence_threshold = float(props.get('confidenceThreshold', 0.8))
         max_retries = int(props.get('maxRetries', 3))
 
+        # Send thinking indicator via AG-UI
+        if self.agui_server:
+            await self.agui_server.send_task_thinking(task.id, f"Initializing {agent_type} agent...")
+
         yield TaskProgress(
             status='initializing',
             message=f'Initializing {agent_type} agent with {model}',
@@ -713,6 +717,13 @@ class AgenticTaskExecutor(TaskExecutor):
         # Execute agent with retries
         for attempt in range(max_retries):
             try:
+                # Send thinking indicator via AG-UI
+                if self.agui_server:
+                    await self.agui_server.send_task_thinking(
+                        task.id,
+                        f"Analyzing with {model} (attempt {attempt + 1}/{max_retries})..."
+                    )
+
                 yield TaskProgress(
                     status='executing',
                     message=f'Agent analyzing (attempt {attempt + 1}/{max_retries})',
@@ -800,26 +811,36 @@ class AgenticTaskExecutor(TaskExecutor):
 
     async def _execute_mcp_tools(self, task_id: str, mcp_tools: list,
                                  log_content: str, log_file_name: str) -> List[Dict[str, Any]]:
-        """Execute MCP tools and broadcast to UI"""
+        """Execute MCP tools and broadcast to UI using AG-UI streaming events"""
         tool_results = []
         tools_to_use = mcp_tools[:3] if len(mcp_tools) > 3 else mcp_tools
 
         for tool in tools_to_use:
+            tool_args = {'context': 'analysis'}
+
+            # Add specific arguments based on tool
+            if tool == 'filesystem-read' and log_file_name:
+                tool_args = {'path': log_file_name, 'encoding': 'utf-8'}
+            elif tool == 'grep-search' and log_content:
+                tool_args = {'pattern': 'ERROR|FATAL|CRITICAL',
+                           'content_preview': log_content[:100] + '...'}
+            elif tool == 'log-parser':
+                tool_args = {'format': 'detect', 'file': log_file_name}
+
             if self.agui_server:
-                tool_args = {'context': 'analysis'}
+                # Send tool start event (new AG-UI streaming)
+                await self.agui_server.send_task_tool_start(task_id, tool, tool_args)
 
-                # Add specific arguments based on tool
-                if tool == 'filesystem-read' and log_file_name:
-                    tool_args = {'path': log_file_name, 'encoding': 'utf-8'}
-                elif tool == 'grep-search' and log_content:
-                    tool_args = {'pattern': 'ERROR|FATAL|CRITICAL',
-                               'content_preview': log_content[:100] + '...'}
-                elif tool == 'log-parser':
-                    tool_args = {'format': 'detect', 'file': log_file_name}
-
+                # Also send old format for backward compatibility
                 await self.agui_server.send_agent_tool_use(task_id, tool, tool_args)
 
-            await asyncio.sleep(0.5)  # Simulate tool execution
+            # Simulate tool execution
+            await asyncio.sleep(0.5)
+
+            if self.agui_server:
+                # Send tool end event (new AG-UI streaming)
+                await self.agui_server.send_task_tool_end(task_id, tool, result={'status': 'success'})
+
             tool_results.append({'tool': tool, 'args': tool_args})
 
         return tool_results
