@@ -237,10 +237,14 @@ class ScriptTaskExecutor(TaskExecutor):
                     'True': True,
                     'False': False,
                     'None': None,
+                    '__import__': __import__,  # Allow imports
+                    '__name__': '__main__',     # Set module name
+                    '__build_class__': __build_class__,  # Allow class definitions
                 }
 
                 script_globals = {
                     '__builtins__': safe_builtins,
+                    '__name__': '__main__',
                     'context': context,
                     # Provide commonly used modules
                     'random': random,
