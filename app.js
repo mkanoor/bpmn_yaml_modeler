@@ -1272,11 +1272,29 @@ class BPMNModeler {
             ],
             agenticTask: [
                 { key: 'agentType', label: 'Agent Type', type: 'text', placeholder: 'nlp-classifier, decision-maker' },
-                { key: 'model', label: 'AI Model', type: 'select', options: ['gpt-4', 'gpt-3.5-turbo', 'claude-3-opus', 'claude-3-sonnet', 'gemini-pro'] },
+                { key: 'model', label: 'AI Model', type: 'select', options: [
+                    'anthropic/claude-3.5-sonnet',
+                    'anthropic/claude-3-opus',
+                    'anthropic/claude-3-sonnet',
+                    'anthropic/claude-3-haiku',
+                    'openai/gpt-4o',
+                    'openai/gpt-4o-mini',
+                    'openai/gpt-4-turbo',
+                    'openai/gpt-3.5-turbo',
+                    'google/gemini-pro-1.5',
+                    'google/gemini-flash-1.5',
+                    'meta-llama/llama-3.1-405b-instruct',
+                    'meta-llama/llama-3.1-70b-instruct',
+                    'meta-llama/llama-3.1-8b-instruct'
+                ] },
                 { key: 'capabilities', label: 'Capabilities', type: 'text', placeholder: 'intent-detection, sentiment-analysis' },
                 { key: 'confidenceThreshold', label: 'Confidence Threshold', type: 'number', placeholder: '0.85' },
                 { key: 'maxRetries', label: 'Max Retries', type: 'number', placeholder: '3' },
-                { key: 'learningEnabled', label: 'Learning Enabled', type: 'checkbox' }
+                { key: 'learningEnabled', label: 'Learning Enabled', type: 'checkbox' },
+                { key: 'aguiEventCategories', label: 'AG-UI Event Categories', type: 'multiselect',
+                  options: ['messaging', 'tool', 'state', 'lifecycle', 'special'],
+                  defaultValue: ['messaging', 'tool'],
+                  helpText: 'Select which AG-UI event categories to send to UI' }
             ],
             callActivity: [
                 { key: 'calledElement', label: 'Called Process', type: 'text', placeholder: 'subprocess-id' },
@@ -1320,7 +1338,50 @@ class BPMNModeler {
             group.appendChild(label);
 
             let input;
-            if (field.type === 'select') {
+            if (field.type === 'multiselect') {
+                // Multi-select for AG-UI event categories
+                input = document.createElement('div');
+                input.className = 'multiselect-container';
+                input.style.cssText = 'display: flex; flex-direction: column; gap: 0.5rem; padding: 0.5rem; background: #f8f9fa; border-radius: 4px;';
+
+                // Initialize with default value if not set
+                if (!element.properties[field.key]) {
+                    element.properties[field.key] = field.defaultValue || [];
+                }
+
+                const selectedCategories = element.properties[field.key] || [];
+
+                field.options.forEach(opt => {
+                    const checkboxContainer = document.createElement('label');
+                    checkboxContainer.style.cssText = 'display: flex; align-items: center; gap: 0.5rem; cursor: pointer;';
+
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.value = opt;
+                    checkbox.checked = selectedCategories.includes(opt);
+
+                    const optionLabel = document.createElement('span');
+                    optionLabel.textContent = this.getEventCategoryLabel(opt);
+                    optionLabel.style.fontSize = '0.9rem';
+
+                    checkbox.addEventListener('change', (e) => {
+                        if (!element.properties[field.key]) {
+                            element.properties[field.key] = [];
+                        }
+                        if (e.target.checked) {
+                            if (!element.properties[field.key].includes(opt)) {
+                                element.properties[field.key].push(opt);
+                            }
+                        } else {
+                            element.properties[field.key] = element.properties[field.key].filter(cat => cat !== opt);
+                        }
+                    });
+
+                    checkboxContainer.appendChild(checkbox);
+                    checkboxContainer.appendChild(optionLabel);
+                    input.appendChild(checkboxContainer);
+                });
+            } else if (field.type === 'select') {
                 input = document.createElement('select');
                 const emptyOption = document.createElement('option');
                 emptyOption.value = '';
@@ -1851,11 +1912,200 @@ Your tasks:
     }
 
     rerenderElements() {
+        // DEBUG: Log when rerenderElements is called
+        console.log('🔄 rerenderElements() called');
+        console.log('   Current zoom:', this.zoom);
+        console.log('   Current pan:', { x: this.panX, y: this.panY });
+        console.trace('Stack trace:');
+
+        // ===== PRESERVE RUNTIME EXECUTION INDICATORS =====
+        // Save runtime state before clearing
+        const runtimeState = new Map();
+
+        document.querySelectorAll('.bpmn-element[data-id]').forEach(element => {
+            const elementId = element.getAttribute('data-id');
+            const state = {
+                classes: [],
+                marks: []
+            };
+
+            // Save runtime classes
+            if (element.classList.contains('active')) state.classes.push('active');
+            if (element.classList.contains('completed')) state.classes.push('completed');
+            if (element.classList.contains('error')) state.classes.push('error');
+            if (element.classList.contains('skipped')) state.classes.push('skipped');
+            if (element.classList.contains('cancelled')) state.classes.push('cancelled');
+
+            // Save runtime marks (completion, error, skip indicators)
+            element.querySelectorAll('.completion-mark, .error-mark, .skip-mark').forEach(mark => {
+                state.marks.push({
+                    className: mark.getAttribute('class'),
+                    x: mark.getAttribute('x') || '20',
+                    y: mark.getAttribute('y') || '-20',
+                    fontSize: mark.getAttribute('font-size') || '20',
+                    fill: mark.getAttribute('fill'),
+                    text: mark.textContent
+                });
+            });
+
+            // Save feedback icons
+            element.querySelectorAll('.feedback-icon').forEach(icon => {
+                state.marks.push({
+                    className: 'feedback-icon',
+                    x: icon.getAttribute('x') || '-30',
+                    y: icon.getAttribute('y') || '-20',
+                    fontSize: icon.getAttribute('font-size') || '24',
+                    cursor: icon.getAttribute('cursor') || 'pointer',
+                    text: icon.textContent,
+                    // Save click handler by storing element ID
+                    feedbackIconFor: elementId
+                });
+            });
+
+            // Save outcome classes on end events
+            const endEventCircle = element.querySelector('circle.bpmn-event[stroke-width="4"]');
+            if (endEventCircle) {
+                if (endEventCircle.classList.contains('outcome-success')) {
+                    state.outcomeClass = 'outcome-success';
+                } else if (endEventCircle.classList.contains('outcome-failure')) {
+                    state.outcomeClass = 'outcome-failure';
+                }
+            }
+
+            if (state.classes.length > 0 || state.marks.length > 0 || state.outcomeClass) {
+                runtimeState.set(elementId, state);
+            }
+        });
+
+        // Also save connection runtime state
+        const connectionState = new Map();
+        document.querySelectorAll('.bpmn-connection[data-id]').forEach(conn => {
+            const connId = conn.getAttribute('data-id');
+            const state = {
+                classes: [],
+                stroke: conn.getAttribute('stroke'),
+                strokeWidth: conn.getAttribute('stroke-width'),
+                strokeDasharray: conn.getAttribute('stroke-dasharray'),
+                opacity: conn.getAttribute('opacity')
+            };
+
+            if (conn.classList.contains('active-flow')) state.classes.push('active-flow');
+            if (conn.classList.contains('path-taken')) state.classes.push('path-taken');
+            if (conn.classList.contains('path-not-taken')) state.classes.push('path-not-taken');
+
+            if (state.classes.length > 0 || state.stroke !== '#2c3e50') {
+                connectionState.set(connId, state);
+            }
+        });
+
+        // Save path indicators (checkmarks and X marks on flows)
+        const pathIndicators = [];
+        document.querySelectorAll('.path-indicator').forEach(indicator => {
+            pathIndicators.push({
+                className: indicator.getAttribute('class'),
+                x: indicator.getAttribute('x'),
+                y: indicator.getAttribute('y'),
+                fontSize: indicator.getAttribute('font-size'),
+                fill: indicator.getAttribute('fill'),
+                fontWeight: indicator.getAttribute('font-weight'),
+                text: indicator.textContent
+            });
+        });
+
         // Full re-render of all elements (used when type changes)
         this.elementsLayer.innerHTML = '';
         this.elements.forEach(element => this.renderElement(element));
         this.connectionsLayer.innerHTML = '';
         this.connections.forEach(connection => this.renderConnection(connection));
+
+        // ===== RESTORE RUNTIME EXECUTION INDICATORS =====
+        console.log(`   Restoring runtime state for ${runtimeState.size} elements`);
+
+        runtimeState.forEach((state, elementId) => {
+            const element = document.querySelector(`.bpmn-element[data-id="${elementId}"]`);
+            if (!element) {
+                console.warn(`   ⚠️ Cannot find element ${elementId} to restore state`);
+                return;
+            }
+
+            // Restore classes
+            state.classes.forEach(className => element.classList.add(className));
+
+            // Restore marks
+            console.log(`   Restoring ${state.marks.length} marks for element ${elementId}`);
+            state.marks.forEach(markData => {
+                console.log(`      - ${markData.className} at (${markData.x}, ${markData.y})`);
+
+                const mark = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                mark.setAttribute('class', markData.className);
+                mark.setAttribute('x', markData.x);
+                mark.setAttribute('y', markData.y);
+                mark.setAttribute('font-size', markData.fontSize);
+                mark.setAttribute('fill', markData.fill);
+                if (markData.cursor) mark.setAttribute('cursor', markData.cursor);
+                if (markData.fontWeight) mark.setAttribute('font-weight', markData.fontWeight);
+                mark.textContent = markData.text;
+
+                // Restore feedback icon click handler
+                if (markData.className === 'feedback-icon' && markData.feedbackIconFor) {
+                    mark.addEventListener('click', () => {
+                        const panel = document.getElementById(`feedback-panel-${markData.feedbackIconFor}`);
+                        if (panel) {
+                            const wasHidden = panel.style.display === 'none';
+                            panel.style.display = wasHidden ? 'block' : 'none';
+                            console.log(`💬 Feedback bubble clicked for ${markData.feedbackIconFor}`);
+                            console.log(`   Panel is now: ${wasHidden ? 'VISIBLE' : 'HIDDEN'}`);
+
+                            if (wasHidden && aguiClient) {
+                                const contentDiv = panel.querySelector('.feedback-content');
+                                if (contentDiv && contentDiv.children.length === 0) {
+                                    console.log(`   Panel is empty - requesting replay from server`);
+                                    aguiClient.requestReplay(markData.feedbackIconFor);
+                                }
+                            }
+                        }
+                    });
+                }
+
+                element.appendChild(mark);
+            });
+
+            // Restore outcome classes on end events
+            if (state.outcomeClass) {
+                const endEventCircle = element.querySelector('circle.bpmn-event[stroke-width="4"]');
+                if (endEventCircle) {
+                    endEventCircle.classList.add(state.outcomeClass);
+                }
+            }
+        });
+
+        // Restore connection state
+        connectionState.forEach((state, connId) => {
+            const conn = document.querySelector(`.bpmn-connection[data-id="${connId}"]`);
+            if (!conn) return;
+
+            state.classes.forEach(className => conn.classList.add(className));
+            if (state.stroke) conn.setAttribute('stroke', state.stroke);
+            if (state.strokeWidth) conn.setAttribute('stroke-width', state.strokeWidth);
+            if (state.strokeDasharray) conn.setAttribute('stroke-dasharray', state.strokeDasharray);
+            if (state.opacity) conn.setAttribute('opacity', state.opacity);
+        });
+
+        // Restore path indicators
+        const connectionsLayer = document.getElementById('connectionsLayer');
+        pathIndicators.forEach(indicatorData => {
+            const indicator = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            indicator.setAttribute('class', indicatorData.className);
+            indicator.setAttribute('x', indicatorData.x);
+            indicator.setAttribute('y', indicatorData.y);
+            indicator.setAttribute('font-size', indicatorData.fontSize);
+            indicator.setAttribute('fill', indicatorData.fill);
+            if (indicatorData.fontWeight) {
+                indicator.setAttribute('font-weight', indicatorData.fontWeight);
+            }
+            indicator.textContent = indicatorData.text;
+            connectionsLayer.appendChild(indicator);
+        });
     }
 
     rerenderPools() {
@@ -2252,7 +2502,7 @@ Your tasks:
                     this.fitToView();
                 }, 100);
 
-                alert('YAML imported successfully!');
+                // Success - no alert needed, workflow is loaded
             } catch (error) {
                 alert('Error importing YAML: ' + error.message);
             }
@@ -2381,6 +2631,10 @@ Your tasks:
     }
 
     rerenderAll() {
+        // DEBUG: Log when rerenderAll is called
+        console.log('🔄 rerenderAll() called');
+        console.trace('Stack trace:');
+
         // Clear DOM
         this.poolsLayer.innerHTML = '';
         this.elementsLayer.innerHTML = '';
@@ -2477,6 +2731,19 @@ Your tasks:
         localStorage.setItem('bpmn-modeler-theme', themeName);
 
         console.log(`Theme changed to: ${themeName}`);
+    }
+
+    // ===== AG-UI EVENT CATEGORY HELPERS =====
+
+    getEventCategoryLabel(category) {
+        const labels = {
+            'messaging': '📝 Messaging Events (TEXT_MESSAGE_START/CONTENT/END)',
+            'tool': '🔧 Tool Events (TOOL_CALL_START/ARGS/RESULT/END)',
+            'state': '💾 State Management (STATE_SNAPSHOT/DELTA, MESSAGES_SNAPSHOT)',
+            'lifecycle': '🔄 Lifecycle & Control (RUN_STARTED/FINISHED/ERROR, STEP_*)',
+            'special': '⚙️ Special / Other (RAW, CUSTOM)'
+        };
+        return labels[category] || category;
     }
 }
 

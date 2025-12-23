@@ -10,6 +10,10 @@ class AGUIClient {
         this.maxReconnectAttempts = 10;
         this.reconnectDelay = 5000;
 
+        // Track cancellable and cancelled tasks
+        this.cancellableTasks = new Set();
+        this.cancelledTasks = new Set();
+
         this.connect();
     }
 
@@ -143,6 +147,18 @@ class AGUIClient {
                 this.handleTaskCancelled(message);
                 break;
 
+            case 'task.cancellable':
+                this.handleTaskCancellable(message);
+                break;
+
+            case 'task.cancelling':
+                this.handleTaskCancelling(message);
+                break;
+
+            case 'task.cancel.failed':
+                this.handleTaskCancelFailed(message);
+                break;
+
             case 'text.message.start':
                 this.handleTextMessageStart(message);
                 break;
@@ -155,6 +171,10 @@ class AGUIClient {
                 this.handleTextMessageEnd(message);
                 break;
 
+            case 'text.message.chunk':
+                this.handleTextMessageChunk(message);
+                break;
+
             case 'task.thinking':
                 this.handleTaskThinking(message);
                 break;
@@ -165,6 +185,10 @@ class AGUIClient {
 
             case 'task.tool.end':
                 this.handleTaskToolEnd(message);
+                break;
+
+            case 'messages.snapshot':
+                this.handleMessagesSnapshot(message);
                 break;
 
             case 'pong':
@@ -183,7 +207,54 @@ class AGUIClient {
 
     handleWorkflowStarted(message) {
         console.log('🚀 Workflow started:', message.instanceId);
-        this.showNotification('Workflow Started', `${message.workflowName} is now executing`, 'info');
+
+        // Build notification message with optional file name
+        let notificationMsg = message.workflowName;
+        if (message.workflowFile) {
+            notificationMsg += `\nFile: ${message.workflowFile}`;
+        }
+        notificationMsg += '\nInstance: ' + message.instanceId.substring(0, 8) + '...';
+
+        this.showNotification('Workflow Started', notificationMsg, 'info');
+
+        // Update header with workflow info
+        this.updateWorkflowHeader(message);
+    }
+
+    updateWorkflowHeader(message) {
+        // Find or create workflow info display in header
+        let workflowInfo = document.getElementById('workflow-info');
+        if (!workflowInfo) {
+            const toolbar = document.querySelector('.toolbar');
+            if (toolbar) {
+                workflowInfo = document.createElement('div');
+                workflowInfo.id = 'workflow-info';
+                workflowInfo.style.cssText = `
+                    margin-left: 1rem;
+                    padding: 0.5rem 1rem;
+                    background: rgba(255, 255, 255, 0.2);
+                    border-radius: 4px;
+                    font-size: 0.85rem;
+                    color: white;
+                    max-width: 400px;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                `;
+                toolbar.appendChild(workflowInfo);
+            }
+        }
+
+        if (workflowInfo) {
+            let displayText = message.workflowName;
+            if (message.workflowFile) {
+                // Show just the filename, not full path
+                const fileName = message.workflowFile.split('/').pop();
+                displayText = `📄 ${fileName}`;
+            }
+            workflowInfo.textContent = displayText;
+            workflowInfo.title = `Workflow: ${message.workflowName}\n${message.workflowFile ? 'File: ' + message.workflowFile + '\n' : ''}Instance: ${message.instanceId}`;
+        }
     }
 
     handleWorkflowCompleted(message) {
@@ -195,6 +266,9 @@ class AGUIClient {
         // After workflow completes, mark any elements on not-taken paths as skipped
         this.markNotTakenPathsAsSkipped();
 
+        // Mark end events with outcome color
+        this.markEndEventsWithOutcome(message.outcome);
+
         this.showNotification(
             `Workflow ${message.outcome}`,
             `Completed in ${message.duration.toFixed(2)}s - Click "Clear Execution" to reset`,
@@ -203,6 +277,46 @@ class AGUIClient {
 
         // Don't auto-clear - preserve final state for review
         // User can manually clear using the "Clear Execution" button
+    }
+
+    markEndEventsWithOutcome(outcome) {
+        console.log(`🎯 Marking end events with outcome: ${outcome}`);
+
+        // Find all end events that were COMPLETED (not just all end events)
+        const allElements = document.querySelectorAll('.bpmn-element[data-id]');
+
+        let endEventCount = 0;
+        allElements.forEach(element => {
+            // Check if this is an end event by looking for the thick border circle
+            // End events have a circle with stroke-width="4" and class="bpmn-event"
+            const circle = element.querySelector('circle.bpmn-event[stroke-width="4"]');
+
+            if (circle) {
+                const elementId = element.getAttribute('data-id');
+
+                // Only color this end event if it was actually completed (reached)
+                if (element.classList.contains('completed')) {
+                    endEventCount++;
+                    console.log(`  Found COMPLETED end event: ${elementId}`);
+
+                    // Remove any existing outcome classes
+                    circle.classList.remove('outcome-success', 'outcome-failure');
+
+                    // Add outcome class based on result
+                    if (outcome === 'success') {
+                        circle.classList.add('outcome-success');
+                        console.log(`  ✅ Added success class to ${elementId}`);
+                    } else {
+                        circle.classList.add('outcome-failure');
+                        console.log(`  ❌ Added failure class to ${elementId}`);
+                    }
+                } else {
+                    console.log(`  Skipping end event ${elementId} (not completed)`);
+                }
+            }
+        });
+
+        console.log(`🎯 Marked ${endEventCount} completed end event(s)`);
     }
 
     markNotTakenPathsAsSkipped() {
@@ -222,12 +336,15 @@ class AGUIClient {
 
         // Access the modeler's connection data to find target elements
         if (typeof modeler !== 'undefined' && modeler.connections) {
+            // Track visited elements to prevent infinite loops
+            const visited = new Set();
+
             notTakenFlowIds.forEach(flowId => {
                 const connection = modeler.connections.find(c => c.id === flowId);
                 if (connection) {
                     console.log(`  Connection ${flowId}: from ${connection.from} to ${connection.to}`);
                     // Recursively mark all elements starting from the target
-                    this.markElementAndDownstreamAsSkippedUsingModel(connection.to);
+                    this.markElementAndDownstreamAsSkippedUsingModel(connection.to, visited);
                 }
             });
         } else {
@@ -238,8 +355,17 @@ class AGUIClient {
         }
     }
 
-    markElementAndDownstreamAsSkippedUsingModel(elementId) {
+    markElementAndDownstreamAsSkippedUsingModel(elementId, visited = new Set()) {
+        // Prevent infinite loops from circular connections
+        if (visited.has(elementId)) {
+            console.log(`  ⚠️ Already visited ${elementId}, skipping to prevent loop`);
+            return;
+        }
+
         console.log(`  📍 Marking element ${elementId} as skipped`);
+
+        // Add to visited set
+        visited.add(elementId);
 
         // Mark this element as skipped
         this.markElementSkipped(elementId);
@@ -252,8 +378,8 @@ class AGUIClient {
 
             outgoingConnections.forEach(conn => {
                 console.log(`    Following connection ${conn.id} to ${conn.to}`);
-                // Recursively mark downstream elements
-                this.markElementAndDownstreamAsSkippedUsingModel(conn.to);
+                // Recursively mark downstream elements (pass visited set)
+                this.markElementAndDownstreamAsSkippedUsingModel(conn.to, visited);
             });
         }
     }
@@ -297,6 +423,26 @@ class AGUIClient {
                 checkmark.setAttribute('fill', '#27ae60'); // Green - task executed
                 checkmark.textContent = '✓';
                 element.appendChild(checkmark);
+            }
+        }
+
+        // Remove cancel button from feedback panel since task has completed
+        this.removeCancelButton(elementId);
+
+        // Mark task as no longer cancellable
+        this.cancellableTasks.delete(elementId);
+    }
+
+    removeCancelButton(elementId) {
+        const panel = document.getElementById(`feedback-panel-${elementId}`);
+        if (panel) {
+            const contentDiv = panel.querySelector('.feedback-content');
+            if (contentDiv) {
+                const cancelBtn = contentDiv.querySelector('.cancel-task-btn');
+                if (cancelBtn) {
+                    console.log(`🗑️ Removing cancel button for completed task: ${elementId}`);
+                    cancelBtn.remove();
+                }
             }
         }
     }
@@ -483,16 +629,25 @@ class AGUIClient {
     }
 
     handleTaskCancelled(message) {
-        console.log('🚫 handleTaskCancelled called');
+        console.log('🚫🚫🚫 handleTaskCancelled called 🚫🚫🚫');
+        console.log('   Message:', JSON.stringify(message, null, 2));
         console.log('   Element ID:', message.elementId);
+        console.log('   Element ID type:', typeof message.elementId);
         console.log('   Reason:', message.reason);
 
         // Find and close the approval modal for this task
         const selector = `.approval-modal[data-task-id="${message.elementId}"]`;
         console.log('   Looking for modal with selector:', selector);
 
+        // Get all modals and log their task IDs
+        const allModals = document.querySelectorAll('.approval-modal');
+        console.log('   All modals in DOM:', allModals.length);
+        allModals.forEach((m, i) => {
+            console.log(`     Modal ${i}: data-task-id="${m.getAttribute('data-task-id')}"`);
+        });
+
         const modal = document.querySelector(selector);
-        console.log('   Modal found:', modal);
+        console.log('   Modal found:', modal ? 'YES' : 'NO');
 
         if (modal) {
             console.log('✅ CLOSING modal for task:', message.elementId);
@@ -514,7 +669,32 @@ class AGUIClient {
             );
         } else {
             console.log('❌ Modal NOT found for task:', message.elementId);
-            console.log('   All modals in DOM:', document.querySelectorAll('.approval-modal'));
+            console.log('   Trying to find modal another way...');
+
+            // Try to find by checking each modal's task ID
+            let foundModal = null;
+            allModals.forEach(m => {
+                const taskId = m.getAttribute('data-task-id');
+                console.log(`   Comparing "${taskId}" === "${message.elementId}": ${taskId === message.elementId}`);
+                if (taskId === message.elementId) {
+                    foundModal = m;
+                }
+            });
+
+            if (foundModal) {
+                console.log('✅ Found modal via iteration!');
+                foundModal.style.opacity = '0';
+                foundModal.style.transition = 'opacity 0.3s ease-out';
+                setTimeout(() => foundModal.remove(), 300);
+
+                this.showNotification(
+                    'Approval Cancelled',
+                    message.reason || 'Another approval path completed first',
+                    'info'
+                );
+            } else {
+                console.log('❌ Still could not find modal');
+            }
         }
 
         // Mark element as cancelled/skipped on canvas
@@ -807,6 +987,15 @@ class AGUIClient {
             el.querySelectorAll('.completion-mark, .error-mark, .skip-mark').forEach(mark => mark.remove());
         });
 
+        // Reset end event colors to default by removing outcome classes
+        document.querySelectorAll('.bpmn-element[data-id]').forEach(element => {
+            const circle = element.querySelector('circle.bpmn-event[stroke-width="4"]');
+            if (circle) {
+                // Remove outcome classes to reset to default CSS colors
+                circle.classList.remove('outcome-success', 'outcome-failure');
+            }
+        });
+
         // Clear connection path indicators
         document.querySelectorAll('.bpmn-connection').forEach(conn => {
             conn.classList.remove('active-flow', 'path-taken', 'path-not-taken');
@@ -821,26 +1010,82 @@ class AGUIClient {
 
         // Clear all feedback panels
         document.querySelectorAll('.task-feedback-panel').forEach(panel => panel.remove());
+
+        // Clear all feedback icons
+        document.querySelectorAll('.feedback-icon').forEach(icon => icon.remove());
+
+        // Clear workflow info from header
+        const workflowInfo = document.getElementById('workflow-info');
+        if (workflowInfo) {
+            workflowInfo.remove();
+        }
+
+        // Request backend to clear history (AG-UI checkpointing)
+        this.send({
+            type: 'clear.history',
+            timestamp: new Date().toISOString()
+        });
+        console.log('🗑️ Requested backend to clear history');
     }
 
     // AG-UI Streaming Feedback Handlers
 
     handleTextMessageStart(message) {
         console.log('📝 Text message start:', message.elementId, message.messageId);
+        console.log('   Full message:', JSON.stringify(message, null, 2));
+        console.log('');
+        console.log('═══════════════════════════════════════════════════════');
+        console.log('📝 LLM TEXT MESSAGE START');
+        console.log('═══════════════════════════════════════════════════════');
+        console.log('Element ID:', message.elementId);
+        console.log('Message ID:', message.messageId);
+        console.log('Thread ID:', message.threadId);
+        console.log('Role:', message.role);
+        console.log('═══════════════════════════════════════════════════════');
+        console.log('');
 
         const panel = this.getOrCreateFeedbackPanel(message.elementId);
+        console.log('   Panel found:', panel ? 'YES' : 'NO', panel?.id);
+
+        // Create a new event item in the timeline
+        const eventItem = document.createElement('div');
+        eventItem.className = 'feedback-event-item';
+        eventItem.setAttribute('data-message-id', message.messageId);
+
+        // Add timestamp
+        const timestamp = document.createElement('div');
+        timestamp.className = 'event-timestamp';
+        timestamp.textContent = new Date().toLocaleTimeString();
+        eventItem.appendChild(timestamp);
+
+        // Add event header
+        const header = document.createElement('div');
+        header.className = 'event-header';
+        header.innerHTML = '<span class="event-icon">💬</span><span class="event-title">LLM Response</span>';
+        eventItem.appendChild(header);
+
+        // Add message container (for streaming content)
         const messageContainer = document.createElement('div');
-        messageContainer.className = 'feedback-message';
+        messageContainer.className = 'feedback-message streaming';
         messageContainer.setAttribute('data-message-id', message.messageId);
         messageContainer.innerHTML = '<span class="typing-indicator">●●●</span>';
+        eventItem.appendChild(messageContainer);
 
-        panel.appendChild(messageContainer);
+        panel.appendChild(eventItem);
+        console.log('   Event item appended to panel. Panel children count:', panel.children.length);
+        console.log('   Event item HTML:', eventItem.outerHTML.substring(0, 200));
+        console.log(`   Panel scrollHeight: ${panel.scrollHeight}px, clientHeight: ${panel.clientHeight}px`);
+        console.log(`   Event item offsetHeight: ${eventItem.offsetHeight}px`);
+
         this.showFeedbackIcon(message.elementId);
+
+        // Auto-scroll to bottom
+        panel.scrollTop = panel.scrollHeight;
     }
 
     handleTextMessageContent(message) {
         const panel = this.getOrCreateFeedbackPanel(message.elementId);
-        const messageContainer = panel.querySelector(`[data-message-id="${message.messageId}"]`);
+        const messageContainer = panel.querySelector(`.feedback-message[data-message-id="${message.messageId}"]`);
 
         if (messageContainer) {
             // Remove typing indicator if present
@@ -849,20 +1094,68 @@ class AGUIClient {
                 typingIndicator.remove();
             }
 
-            // Append delta (new chunk) or replace with full content
+            // Append delta (new chunk) - streaming text
             if (message.delta) {
+                const previousLength = messageContainer.textContent.length;
                 messageContainer.textContent += message.delta;
-            } else {
+                const newLength = messageContainer.textContent.length;
+
+                // Log EVERY delta to see the full LLM response
+                console.log('───────────────────────────────────────────────────────');
+                console.log('📝 LLM TEXT MESSAGE CONTENT (Delta - STREAMING)');
+                console.log('───────────────────────────────────────────────────────');
+                console.log('Element ID:', message.elementId);
+                console.log('Message ID:', message.messageId);
+                console.log('Delta length:', message.delta.length);
+                console.log('Delta text:', message.delta);
+                console.log('Total accumulated length:', previousLength, '→', newLength);
+                console.log('Accumulated text so far (first 500 chars):');
+                console.log(messageContainer.textContent.substring(0, 500));
+                console.log('───────────────────────────────────────────────────────');
+                console.log('');
+            } else if (message.content) {
+                // Backend sent entire message at once (NOT streaming)
                 messageContainer.textContent = message.content;
+                console.log('');
+                console.log('═══════════════════════════════════════════════════════');
+                console.log('📝 LLM TEXT MESSAGE CONTENT (Full - NOT STREAMING!)');
+                console.log('═══════════════════════════════════════════════════════');
+                console.log('⚠️  WARNING: Backend sent entire message at once');
+                console.log('⚠️  This means streaming is NOT enabled on the backend');
+                console.log('Element ID:', message.elementId);
+                console.log('Message ID:', message.messageId);
+                console.log('Content length:', message.content.length);
+                console.log('Full content:');
+                console.log(message.content);
+                console.log('═══════════════════════════════════════════════════════');
+                console.log('');
+            } else {
+                console.warn('⚠️ Message has neither delta nor content!', message);
             }
+
+            // Auto-scroll to bottom as content arrives
+            panel.scrollTop = panel.scrollHeight;
+        } else {
+            console.warn(`⚠️ Message container NOT found for messageId: ${message.messageId}`);
+            console.log(`   Panel children count: ${panel.children.length}`);
+            console.log(`   Looking for: .feedback-message[data-message-id="${message.messageId}"]`);
         }
     }
 
     handleTextMessageEnd(message) {
         console.log('✅ Text message complete:', message.elementId, message.messageId);
+        console.log('');
+        console.log('═══════════════════════════════════════════════════════');
+        console.log('✅ LLM TEXT MESSAGE END');
+        console.log('═══════════════════════════════════════════════════════');
+        console.log('Element ID:', message.elementId);
+        console.log('Message ID:', message.messageId);
+        console.log('Thread ID:', message.threadId);
+        console.log('═══════════════════════════════════════════════════════');
+        console.log('');
 
         const panel = this.getOrCreateFeedbackPanel(message.elementId);
-        const messageContainer = panel.querySelector(`[data-message-id="${message.messageId}"]`);
+        const messageContainer = panel.querySelector(`.feedback-message[data-message-id="${message.messageId}"]`);
 
         if (messageContainer) {
             // Remove typing indicator
@@ -871,8 +1164,89 @@ class AGUIClient {
                 typingIndicator.remove();
             }
 
-            // Mark as complete
+            // Mark as complete and remove streaming class
+            messageContainer.classList.remove('streaming');
             messageContainer.classList.add('complete');
+        }
+    }
+
+    handleTextMessageChunk(message) {
+        console.log('');
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        console.log('📦 TEXT MESSAGE CHUNK (SENTENCE)');
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        console.log('Element ID:', message.elementId);
+        console.log('Message ID:', message.messageId);
+        console.log('Role:', message.role);
+        console.log('Content length:', message.content.length);
+        console.log('Content:', message.content);
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        console.log('');
+
+        const panel = this.getOrCreateFeedbackPanel(message.elementId);
+
+        // Count current sentences (look for feedback-message elements, not all event items)
+        const currentSentenceCount = panel.querySelectorAll('.feedback-message').length + 1;
+
+        // Create a new event item for this sentence
+        const eventItem = document.createElement('div');
+        eventItem.className = 'feedback-event-item';
+        eventItem.setAttribute('data-message-id', message.messageId);
+
+        // Add sentence number and timestamp (use message timestamp if available, otherwise current time)
+        const timestamp = document.createElement('div');
+        timestamp.className = 'event-timestamp';
+        const timestampStr = message.timestamp
+            ? new Date(message.timestamp).toLocaleTimeString()
+            : new Date().toLocaleTimeString();
+        timestamp.innerHTML = `<span class="sentence-number">#${currentSentenceCount}</span> ${timestampStr}`;
+        eventItem.appendChild(timestamp);
+
+        // Add event header
+        const header = document.createElement('div');
+        header.className = 'event-header';
+        header.innerHTML = '<span class="event-icon">💬</span><span class="event-title">LLM Response</span>';
+        eventItem.appendChild(header);
+
+        // Add message container with the complete sentence
+        const messageContainer = document.createElement('div');
+        messageContainer.className = 'feedback-message complete';
+        messageContainer.setAttribute('data-message-id', message.messageId);
+        messageContainer.textContent = message.content;
+        eventItem.appendChild(messageContainer);
+
+        panel.appendChild(eventItem);
+
+        // Update counter in header
+        this.updateFeedbackCounter(message.elementId);
+
+        this.showFeedbackIcon(message.elementId);
+
+        // Auto-scroll to bottom
+        panel.scrollTop = panel.scrollHeight;
+    }
+
+    updateFeedbackCounter(elementId) {
+        const counterElement = document.getElementById(`feedback-count-${elementId}`);
+        if (counterElement) {
+            const panel = this.getOrCreateFeedbackPanel(elementId);
+            const totalItems = panel.querySelectorAll('.feedback-event-item').length;
+            counterElement.textContent = `${totalItems} item${totalItems !== 1 ? 's' : ''}`;
+
+            // Check if panel is scrollable and add indicator
+            this.updateScrollIndicator(panel);
+        }
+    }
+
+    updateScrollIndicator(panel) {
+        // Check if content is scrollable (has overflow)
+        const isScrollable = panel.scrollHeight > panel.clientHeight;
+        const isScrolledToBottom = Math.abs(panel.scrollHeight - panel.clientHeight - panel.scrollTop) < 5;
+
+        if (isScrollable && !isScrolledToBottom) {
+            panel.classList.add('has-more-content');
+        } else {
+            panel.classList.remove('has-more-content');
         }
     }
 
@@ -880,84 +1254,360 @@ class AGUIClient {
         console.log('🤔 Task thinking:', message.elementId);
 
         const panel = this.getOrCreateFeedbackPanel(message.elementId);
+
+        // Create a separate event item for thinking
+        const eventItem = document.createElement('div');
+        eventItem.className = 'feedback-event-item thinking-event';
+
+        // Add timestamp
+        const timestamp = document.createElement('div');
+        timestamp.className = 'event-timestamp';
+        timestamp.textContent = new Date().toLocaleTimeString();
+        eventItem.appendChild(timestamp);
+
+        // Add thinking content
         const thinkingDiv = document.createElement('div');
         thinkingDiv.className = 'feedback-thinking';
         thinkingDiv.innerHTML = `
             <span class="thinking-icon">🤔</span>
             <span class="thinking-text">${message.message || 'Thinking...'}</span>
         `;
+        eventItem.appendChild(thinkingDiv);
 
-        panel.appendChild(thinkingDiv);
+        panel.appendChild(eventItem);
+
+        // Update counter
+        this.updateFeedbackCounter(message.elementId);
+
         this.showFeedbackIcon(message.elementId);
 
-        // Remove thinking indicator after a moment (will be replaced by actual content)
-        setTimeout(() => {
-            if (thinkingDiv.parentNode) {
-                thinkingDiv.remove();
-            }
-        }, 10000); // Remove after 10s if not replaced
+        // Auto-scroll to bottom
+        panel.scrollTop = panel.scrollHeight;
     }
 
     handleTaskToolStart(message) {
         console.log('🔧 Tool start:', message.elementId, message.toolName);
 
         const panel = this.getOrCreateFeedbackPanel(message.elementId);
+
+        // Create a separate event item for tool execution
+        const eventItem = document.createElement('div');
+        eventItem.className = 'feedback-event-item tool-event';
+        eventItem.setAttribute('data-tool', message.toolName);
+
+        // Add timestamp
+        const timestamp = document.createElement('div');
+        timestamp.className = 'event-timestamp';
+        timestamp.textContent = new Date().toLocaleTimeString();
+        eventItem.appendChild(timestamp);
+
+        // Add tool content
         const toolDiv = document.createElement('div');
         toolDiv.className = 'feedback-tool';
-        toolDiv.setAttribute('data-tool', message.toolName);
         toolDiv.innerHTML = `
             <span class="tool-icon">🔧</span>
             <span class="tool-name">${message.toolName}</span>
-            <span class="tool-status">Running...</span>
+            <span class="tool-status running">Running...</span>
         `;
+        eventItem.appendChild(toolDiv);
 
-        panel.appendChild(toolDiv);
+        panel.appendChild(eventItem);
+
+        // Update counter
+        this.updateFeedbackCounter(message.elementId);
+
         this.showFeedbackIcon(message.elementId);
+
+        // Auto-scroll to bottom
+        panel.scrollTop = panel.scrollHeight;
     }
 
     handleTaskToolEnd(message) {
         console.log('✅ Tool complete:', message.elementId, message.toolName);
 
         const panel = this.getOrCreateFeedbackPanel(message.elementId);
-        const toolDiv = panel.querySelector(`[data-tool="${message.toolName}"]`);
+        const eventItem = panel.querySelector(`.feedback-event-item[data-tool="${message.toolName}"]`);
 
-        if (toolDiv) {
-            const statusSpan = toolDiv.querySelector('.tool-status');
+        if (eventItem) {
+            const statusSpan = eventItem.querySelector('.tool-status');
             if (statusSpan) {
-                statusSpan.textContent = 'Complete';
+                statusSpan.textContent = '✓ Complete';
+                statusSpan.classList.remove('running');
                 statusSpan.classList.add('complete');
             }
         }
     }
 
+    handleMessagesSnapshot(message) {
+        console.log('');
+        console.log('═══════════════════════════════════════════════════════');
+        console.log('📼 MESSAGES SNAPSHOT (REPLAY)');
+        console.log('═══════════════════════════════════════════════════════');
+        console.log('Element ID:', message.elementId);
+        console.log('Thread ID:', message.threadId);
+        console.log('Messages:', message.messages?.length || 0);
+        console.log('Thinking events:', message.thinking?.length || 0);
+        console.log('Tool events:', message.tools?.length || 0);
+        console.log('');
+
+        // Log all messages in detail
+        if (message.messages && message.messages.length > 0) {
+            console.log('──────────────────────────────────────────────────────');
+            console.log('ALL LLM MESSAGES:');
+            console.log('──────────────────────────────────────────────────────');
+            message.messages.forEach((msg, index) => {
+                console.log('');
+                console.log(`Message ${index + 1}/${message.messages.length}:`);
+                console.log('  ID:', msg.id);
+                console.log('  Role:', msg.role);
+                console.log('  Timestamp:', msg.timestamp);
+                console.log('  Cancelled:', msg.cancelled || false);
+                console.log('  Content length:', msg.content?.length || 0);
+                console.log('  Content:');
+                console.log(msg.content);
+                console.log('');
+            });
+            console.log('──────────────────────────────────────────────────────');
+        }
+        console.log('═══════════════════════════════════════════════════════');
+        console.log('');
+
+        const panel = this.getOrCreateFeedbackPanel(message.elementId);
+
+        // Clear existing content for replay
+        panel.innerHTML = '';
+
+        // Collect all events with timestamps for chronological ordering
+        const allEvents = [];
+
+        // Add thinking events
+        if (message.thinking && message.thinking.length > 0) {
+            message.thinking.forEach(thinking => {
+                allEvents.push({
+                    type: 'thinking',
+                    timestamp: new Date(thinking.timestamp),
+                    data: thinking
+                });
+            });
+        }
+
+        // Add tool events (split into start and end)
+        if (message.tools && message.tools.length > 0) {
+            message.tools.forEach(tool => {
+                allEvents.push({
+                    type: 'tool.start',
+                    timestamp: new Date(tool.startTime),
+                    data: tool
+                });
+                if (tool.endTime) {
+                    allEvents.push({
+                        type: 'tool.end',
+                        timestamp: new Date(tool.endTime),
+                        data: tool
+                    });
+                }
+            });
+        }
+
+        // Add message events
+        if (message.messages && message.messages.length > 0) {
+            message.messages.forEach(msg => {
+                allEvents.push({
+                    type: 'message',
+                    timestamp: new Date(msg.timestamp),
+                    data: msg
+                });
+            });
+        }
+
+        // Sort events chronologically
+        allEvents.sort((a, b) => a.timestamp - b.timestamp);
+
+        console.log(`📼 Replaying ${allEvents.length} events in chronological order`);
+
+        // Render events in order
+        allEvents.forEach((event, index) => {
+            const eventItem = document.createElement('div');
+            eventItem.className = 'feedback-event-item';
+
+            // Add timestamp
+            const timestamp = document.createElement('div');
+            timestamp.className = 'event-timestamp';
+            timestamp.textContent = event.timestamp.toLocaleTimeString();
+            eventItem.appendChild(timestamp);
+
+            if (event.type === 'thinking') {
+                // Thinking event
+                const thinkingDiv = document.createElement('div');
+                thinkingDiv.className = 'feedback-thinking';
+                thinkingDiv.innerHTML = `
+                    <span class="thinking-icon">🤔</span>
+                    <span class="thinking-text">${event.data.message}</span>
+                `;
+                eventItem.appendChild(thinkingDiv);
+
+            } else if (event.type === 'tool.start') {
+                // Tool start event
+                eventItem.setAttribute('data-tool', event.data.name);
+                const toolDiv = document.createElement('div');
+                toolDiv.className = 'feedback-tool';
+                toolDiv.innerHTML = `
+                    <span class="tool-icon">🔧</span>
+                    <span class="tool-name">${event.data.name}</span>
+                    <span class="tool-status running">Running...</span>
+                `;
+                eventItem.appendChild(toolDiv);
+
+            } else if (event.type === 'tool.end') {
+                // Tool end event
+                eventItem.setAttribute('data-tool', event.data.name);
+                const toolDiv = document.createElement('div');
+                toolDiv.className = 'feedback-tool';
+                toolDiv.innerHTML = `
+                    <span class="tool-icon">🔧</span>
+                    <span class="tool-name">${event.data.name}</span>
+                    <span class="tool-status complete">✓ Complete</span>
+                `;
+                eventItem.appendChild(toolDiv);
+
+            } else if (event.type === 'message') {
+                // LLM message event
+                eventItem.setAttribute('data-message-id', event.data.id);
+
+                const header = document.createElement('div');
+                header.className = 'event-header';
+                header.innerHTML = '<span class="event-icon">💬</span><span class="event-title">LLM Response</span>';
+                eventItem.appendChild(header);
+
+                const messageContainer = document.createElement('div');
+                messageContainer.className = event.data.cancelled ? 'feedback-message cancelled' : 'feedback-message complete';
+                messageContainer.setAttribute('data-message-id', event.data.id);
+                messageContainer.textContent = event.data.content;
+
+                // Add cancellation notice if message was cancelled
+                if (event.data.cancelled) {
+                    const cancelNotice = document.createElement('div');
+                    cancelNotice.className = 'message-cancelled-notice';
+                    cancelNotice.innerHTML = `⚠️ (Partial response - task cancelled: ${event.data.cancellationReason || 'User cancelled'})`;
+                    messageContainer.appendChild(cancelNotice);
+                }
+
+                eventItem.appendChild(messageContainer);
+            }
+
+            panel.appendChild(eventItem);
+        });
+
+        // Check if any messages were cancelled and show overall notice
+        const cancelledMessages = message.messages ? message.messages.filter(m => m.cancelled) : [];
+        if (cancelledMessages.length > 0) {
+            const overallNotice = document.createElement('div');
+            overallNotice.className = 'replay-cancellation-notice';
+            overallNotice.innerHTML = `
+                <span class="cancel-icon">⚠️</span>
+                <strong>This task was cancelled during execution</strong>
+                <div class="cancel-reason">${cancelledMessages[0].cancellationReason || 'User cancelled'}</div>
+            `;
+            panel.appendChild(overallNotice);
+        }
+
+        this.showFeedbackIcon(message.elementId);
+
+        // Ensure cancel button is removed for replayed (completed) tasks
+        this.removeCancelButton(message.elementId);
+        this.cancellableTasks.delete(message.elementId);
+
+        console.log('📼 Replay complete - panel populated with history in chronological order');
+    }
+
     getOrCreateFeedbackPanel(elementId) {
+        console.log(`🔍 getOrCreateFeedbackPanel called for elementId: ${elementId}`);
         let panel = document.getElementById(`feedback-panel-${elementId}`);
 
         if (!panel) {
+            console.log(`   Creating NEW panel for ${elementId}`);
             panel = document.createElement('div');
             panel.id = `feedback-panel-${elementId}`;
             panel.className = 'task-feedback-panel';
             panel.innerHTML = `
                 <div class="feedback-header">
                     <span class="feedback-title">Task Activity</span>
-                    <button class="feedback-close" onclick="this.parentElement.parentElement.remove()">×</button>
+                    <span class="feedback-count" id="feedback-count-${elementId}">0 items</span>
+                    <button class="feedback-close" onclick="this.closest('.task-feedback-panel').style.display='none'">×</button>
                 </div>
                 <div class="feedback-content"></div>
             `;
 
-            // Position near the element
-            const element = document.querySelector(`[data-id="${elementId}"]`);
-            if (element) {
-                const rect = element.getBoundingClientRect();
-                panel.style.position = 'fixed';
-                panel.style.left = `${rect.right + 20}px`;
-                panel.style.top = `${rect.top}px`;
+            // Position panel in a fixed, visible location (top-right corner)
+            // This avoids issues with canvas zoom/pan affecting positioning
+            panel.style.position = 'fixed';
+            panel.style.right = '20px';
+            panel.style.top = '100px';
+            panel.style.display = 'none';  // Hidden by default - only show when user clicks bubble
+            console.log(`   Positioned panel at fixed location: right: 20px, top: 100px`);
+            console.log(`   Panel hidden by default - user must click bubble to show`);
+
+            // Make panel draggable
+            this.makePanelDraggable(panel);
+
+            // Add scroll listener to update scroll indicator
+            const contentDiv = panel.querySelector('.feedback-content');
+            if (contentDiv) {
+                contentDiv.addEventListener('scroll', () => {
+                    this.updateScrollIndicator(contentDiv);
+                });
             }
 
             document.body.appendChild(panel);
+            console.log(`   Panel appended to body`);
+            console.log(`   Panel dimensions: ${panel.offsetWidth}x${panel.offsetHeight}`);
+        } else {
+            console.log(`   Panel already exists for ${elementId}`);
         }
 
-        return panel.querySelector('.feedback-content') || panel;
+        const contentDiv = panel.querySelector('.feedback-content');
+        console.log(`   Returning .feedback-content div, has ${contentDiv?.children.length || 0} children`);
+        return contentDiv || panel;
+    }
+
+    makePanelDraggable(panel) {
+        const header = panel.querySelector('.feedback-header');
+        let isDragging = false;
+        let currentX;
+        let currentY;
+        let initialX;
+        let initialY;
+
+        header.style.cursor = 'move';
+
+        header.addEventListener('mousedown', (e) => {
+            if (e.target.classList.contains('feedback-close')) return; // Don't drag when clicking close button
+
+            isDragging = true;
+            initialX = e.clientX - panel.offsetLeft;
+            initialY = e.clientY - panel.offsetTop;
+
+            // Remove right/top positioning and use left/top for dragging
+            const rect = panel.getBoundingClientRect();
+            panel.style.left = `${rect.left}px`;
+            panel.style.top = `${rect.top}px`;
+            panel.style.right = 'auto';
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+
+            e.preventDefault();
+            currentX = e.clientX - initialX;
+            currentY = e.clientY - initialY;
+
+            panel.style.left = `${currentX}px`;
+            panel.style.top = `${currentY}px`;
+        });
+
+        document.addEventListener('mouseup', () => {
+            isDragging = false;
+        });
     }
 
     showFeedbackIcon(elementId) {
@@ -986,11 +1636,26 @@ class AGUIClient {
         icon.addEventListener('click', () => {
             const panel = document.getElementById(`feedback-panel-${elementId}`);
             if (panel) {
-                panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+                const wasHidden = panel.style.display === 'none';
+                panel.style.display = wasHidden ? 'block' : 'none';
+                console.log(`💬 Feedback bubble clicked for ${elementId}`);
+                console.log(`   Panel is now: ${wasHidden ? 'VISIBLE' : 'HIDDEN'}`);
+
+                if (wasHidden) {
+                    const contentDiv = panel.querySelector('.feedback-content');
+                    console.log(`   Panel has ${contentDiv?.children.length || 0} event items`);
+
+                    // If panel is empty, request replay from server
+                    if (contentDiv && contentDiv.children.length === 0) {
+                        console.log(`   Panel is empty - requesting replay from server`);
+                        this.requestReplay(elementId);
+                    }
+                }
             }
         });
 
         element.appendChild(icon);
+        console.log(`💬 Feedback icon added to element ${elementId} - CLICK IT to show panel`);
     }
 
     send(message) {
@@ -999,6 +1664,15 @@ class AGUIClient {
         } else {
             console.warn('WebSocket not connected, message not sent:', message);
         }
+    }
+
+    requestReplay(elementId) {
+        console.log(`📼 Requesting replay for element: ${elementId}`);
+        this.send({
+            type: 'replay.request',
+            elementId: elementId,
+            timestamp: new Date().toISOString()
+        });
     }
 
     on(messageType, handler) {
@@ -1014,6 +1688,154 @@ class AGUIClient {
             this.ws.close();
             this.ws = null;
         }
+    }
+
+    // ===== CANCELLATION SUPPORT =====
+
+    handleTaskCancellable(message) {
+        console.log('✅ Task is cancellable:', message.elementId);
+        this.cancellableTasks.add(message.elementId);
+
+        // Add cancel button to feedback panel
+        const panel = this.getOrCreateFeedbackPanel(message.elementId);
+
+        // Check if cancel button already exists
+        if (panel.querySelector('.cancel-task-btn')) {
+            return;
+        }
+
+        // Create cancel button
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'cancel-task-btn';
+        cancelBtn.innerHTML = '🛑 Cancel Task';
+        cancelBtn.title = 'Stop this task execution';
+
+        cancelBtn.addEventListener('click', () => {
+            this.cancelTask(message.elementId);
+        });
+
+        // Insert at the beginning of the panel
+        panel.insertBefore(cancelBtn, panel.firstChild);
+    }
+
+    cancelTask(elementId, reason = 'User cancelled') {
+        if (!this.cancellableTasks.has(elementId)) {
+            console.warn(`Task ${elementId} is not cancellable`);
+            return;
+        }
+
+        console.log('🛑 Sending cancel request for task:', elementId);
+
+        // Disable the cancel button immediately
+        const panel = this.getOrCreateFeedbackPanel(elementId);
+        const cancelBtn = panel.querySelector('.cancel-task-btn');
+        if (cancelBtn) {
+            cancelBtn.disabled = true;
+            cancelBtn.textContent = '⏳ Cancelling...';
+        }
+
+        // Send cancel request
+        this.send({
+            type: 'task.cancel.request',
+            elementId: elementId,
+            reason: reason,
+            timestamp: new Date().toISOString()
+        });
+
+        this.cancelledTasks.add(elementId);
+    }
+
+    handleTaskCancelling(message) {
+        console.log('⏳ Task cancelling:', message.elementId);
+
+        const panel = this.getOrCreateFeedbackPanel(message.elementId);
+
+        // Update cancel button
+        const cancelBtn = panel.querySelector('.cancel-task-btn');
+        if (cancelBtn) {
+            cancelBtn.disabled = true;
+            cancelBtn.textContent = '⏳ Cancelling...';
+            cancelBtn.classList.add('cancelling');
+        }
+
+        // Add cancelling notice
+        const notice = document.createElement('div');
+        notice.className = 'cancelling-notice';
+        notice.innerHTML = `<span class="cancel-icon">⏳</span> ${message.message || 'Stopping task gracefully...'}`;
+        panel.insertBefore(notice, panel.firstChild);
+    }
+
+    handleTaskCancelled(message) {
+        console.log('🚫 Task cancelled:', message.elementId);
+
+        const panel = this.getOrCreateFeedbackPanel(message.elementId);
+
+        // Remove cancel button
+        const cancelBtn = panel.querySelector('.cancel-task-btn');
+        if (cancelBtn) {
+            cancelBtn.remove();
+        }
+
+        // Remove cancelling notice
+        const cancellingNotice = panel.querySelector('.cancelling-notice');
+        if (cancellingNotice) {
+            cancellingNotice.remove();
+        }
+
+        // Add cancellation complete notice
+        const notice = document.createElement('div');
+        notice.className = 'cancellation-notice';
+        notice.innerHTML = `
+            <span class="cancel-icon">⚠️</span>
+            <strong>Task cancelled by user</strong>
+            <div class="cancel-reason">${message.reason || 'User requested cancellation'}</div>
+        `;
+
+        // Add partial result if available
+        if (message.partialResult) {
+            const resultDiv = document.createElement('div');
+            resultDiv.className = 'partial-result';
+            resultDiv.innerHTML = `
+                <strong>Partial Result:</strong><br>
+                ${JSON.stringify(message.partialResult, null, 2)}
+            `;
+            notice.appendChild(resultDiv);
+        }
+
+        panel.appendChild(notice);
+
+        // Mark task as no longer cancellable
+        this.cancellableTasks.delete(message.elementId);
+    }
+
+    handleTaskCancelFailed(message) {
+        console.warn('❌ Task cancellation failed:', message.elementId, message.error);
+
+        const panel = this.getOrCreateFeedbackPanel(message.elementId);
+
+        // Re-enable cancel button if it exists
+        const cancelBtn = panel.querySelector('.cancel-task-btn');
+        if (cancelBtn) {
+            cancelBtn.disabled = false;
+            cancelBtn.textContent = '🛑 Cancel Task';
+            cancelBtn.classList.remove('cancelling');
+        }
+
+        // Show error message
+        const errorNotice = document.createElement('div');
+        errorNotice.className = 'cancel-error-notice';
+        errorNotice.innerHTML = `
+            <span class="cancel-icon">❌</span>
+            <strong>Cannot cancel task</strong>
+            <div class="cancel-error">${message.error}</div>
+        `;
+
+        panel.appendChild(errorNotice);
+
+        // Auto-remove error after 5 seconds
+        setTimeout(() => {
+            errorNotice.remove();
+        }, 5000);
     }
 }
 

@@ -101,12 +101,8 @@ class UserTaskExecutor(TaskExecutor):
 
         except asyncio.CancelledError:
             logger.info(f"🛑 User task {task.id} cancelled - another approval path completed first")
-            yield TaskProgress(
-                status='cancelled',
-                message=f'Task cancelled - another approval path completed first',
-                progress=0.5
-            )
-            # Re-raise to stop execution
+            # Don't yield progress here - the workflow engine already sent task.cancelled event
+            # Just re-raise to stop execution
             raise
 
 
@@ -597,12 +593,8 @@ class ReceiveTaskExecutor(TaskExecutor):
 
             except asyncio.CancelledError:
                 logger.info(f"🛑 Task {task.id} cancelled while waiting for webhook")
-                yield TaskProgress(
-                    status='cancelled',
-                    message=f'Task cancelled - another approval path completed first',
-                    progress=0.5
-                )
-                # Re-raise to stop execution
+                # Don't yield progress here - the workflow engine already sent task.cancelled event
+                # Just re-raise to stop execution
                 raise
 
             except asyncio.TimeoutError:
@@ -716,6 +708,16 @@ class AgenticTaskExecutor(TaskExecutor):
         confidence_threshold = float(props.get('confidenceThreshold', 0.8))
         max_retries = int(props.get('maxRetries', 3))
 
+        # Register task preferences for AG-UI event filtering
+        if self.agui_server:
+            self.agui_server.register_task_preferences(task.id, props)
+
+        # Mark task as cancellable and notify frontend
+        allow_cancellation = props.get('allowCancellation', True)
+        if self.agui_server and allow_cancellation:
+            self.agui_server.mark_task_cancellable(task.id)
+            await self.agui_server.send_task_cancellable(task.id)
+
         # Send thinking indicator via AG-UI
         if self.agui_server:
             await self.agui_server.send_task_thinking(task.id, f"Initializing {agent_type} agent...")
@@ -728,6 +730,21 @@ class AgenticTaskExecutor(TaskExecutor):
 
         # Execute agent with retries
         for attempt in range(max_retries):
+            # Check for cancellation between retries
+            if self.agui_server and self.agui_server.is_cancelled(task.id):
+                logger.info(f"🛑 Task {task.id} cancelled before attempt {attempt + 1}")
+                await self.agui_server.send_task_cancelled_complete(
+                    task.id,
+                    "User cancelled before execution completed"
+                )
+                yield TaskProgress(
+                    status='cancelled',
+                    message='Task cancelled by user',
+                    progress=0.5,
+                    result={'status': 'cancelled', 'reason': 'User cancelled'}
+                )
+                return
+
             try:
                 # Send thinking indicator via AG-UI
                 if self.agui_server:
@@ -791,6 +808,9 @@ class AgenticTaskExecutor(TaskExecutor):
 
         logger.info(f"Running agent with model: {model} via OpenRouter")
 
+        # Store task_id for streaming callbacks
+        self._current_task_id = task_id
+
         # Check if we have log file content in context
         log_content = context.get('logFileContent', '')
         log_file_name = context.get('logFileName', 'unknown.log')
@@ -804,6 +824,7 @@ class AgenticTaskExecutor(TaskExecutor):
         if use_openrouter:
             try:
                 analysis_result = await self._call_openrouter(
+                    task_id=task_id,  # Pass task_id explicitly
                     model=model,
                     system_prompt=system_prompt,
                     tool_results=tool_results,
@@ -812,7 +833,9 @@ class AgenticTaskExecutor(TaskExecutor):
                 )
                 return analysis_result
             except Exception as e:
+                import traceback
                 logger.error(f"OpenRouter API call failed: {e}")
+                logger.error(f"Full error traceback:\n{traceback.format_exc()}")
                 logger.warning("Falling back to simple analysis")
                 # Fall through to simple analysis
         else:
@@ -825,19 +848,17 @@ class AgenticTaskExecutor(TaskExecutor):
                                  log_content: str, log_file_name: str) -> List[Dict[str, Any]]:
         """Execute MCP tools and broadcast to UI using AG-UI streaming events"""
         tool_results = []
-        tools_to_use = mcp_tools[:3] if len(mcp_tools) > 3 else mcp_tools
+        # ✅ REMOVED 3-tool limitation - use all configured tools
+        tools_to_use = mcp_tools
 
         for tool in tools_to_use:
-            tool_args = {'context': 'analysis'}
+            # Check for cancellation before each tool
+            if self.agui_server and self.agui_server.is_cancelled(task_id):
+                logger.info(f"🛑 Task {task_id} cancelled during tool execution, stopping after {len(tool_results)} tools")
+                return tool_results  # Return partial results
 
-            # Add specific arguments based on tool
-            if tool == 'filesystem-read' and log_file_name:
-                tool_args = {'path': log_file_name, 'encoding': 'utf-8'}
-            elif tool == 'grep-search' and log_content:
-                tool_args = {'pattern': 'ERROR|FATAL|CRITICAL',
-                           'content_preview': log_content[:100] + '...'}
-            elif tool == 'log-parser':
-                tool_args = {'format': 'detect', 'file': log_file_name}
+            # Build tool arguments based on tool type
+            tool_args = await self._build_tool_arguments(tool, log_content, log_file_name)
 
             if self.agui_server:
                 # Send tool start event (new AG-UI streaming)
@@ -846,22 +867,83 @@ class AgenticTaskExecutor(TaskExecutor):
                 # Also send old format for backward compatibility
                 await self.agui_server.send_agent_tool_use(task_id, tool, tool_args)
 
-            # Simulate tool execution
-            await asyncio.sleep(0.5)
+            # ✅ EXECUTE ACTUAL MCP TOOL (not simulated)
+            try:
+                if self.mcp_client:
+                    # Map workflow tool name to MCP tool name
+                    from mcp_client import TOOL_NAME_MAPPING
+                    mcp_tool_name = TOOL_NAME_MAPPING.get(tool, tool)
+
+                    logger.info(f"🔧 Executing MCP tool: {tool} -> {mcp_tool_name}")
+                    result = await self.mcp_client.call_tool(mcp_tool_name, tool_args)
+                    logger.info(f"✅ MCP tool {tool} completed successfully")
+                else:
+                    # Fallback to simulation if no MCP client
+                    logger.warning(f"⚠️ No MCP client - simulating tool {tool}")
+                    await asyncio.sleep(0.5)
+                    result = {'status': 'simulated', 'message': 'MCP client not initialized'}
+
+            except Exception as e:
+                logger.error(f"❌ MCP tool {tool} failed: {e}")
+                result = {'status': 'error', 'error': str(e)}
+
+            # Check for cancellation after tool execution
+            if self.agui_server and self.agui_server.is_cancelled(task_id):
+                logger.info(f"🛑 Task {task_id} cancelled after tool '{tool}' completed")
+                # Send tool end event for the completed tool
+                await self.agui_server.send_task_tool_end(task_id, tool, result=result)
+                tool_results.append({'tool': tool, 'args': tool_args, 'result': result})
+                return tool_results  # Return partial results
 
             if self.agui_server:
                 # Send tool end event (new AG-UI streaming)
-                await self.agui_server.send_task_tool_end(task_id, tool, result={'status': 'success'})
+                await self.agui_server.send_task_tool_end(task_id, tool, result=result)
 
-            tool_results.append({'tool': tool, 'args': tool_args})
+            tool_results.append({'tool': tool, 'args': tool_args, 'result': result})
 
         return tool_results
 
-    async def _call_openrouter(self, model: str, system_prompt: str,
+    async def _build_tool_arguments(self, tool: str, log_content: str, log_file_name: str) -> Dict[str, Any]:
+        """Build appropriate arguments for each tool type."""
+
+        # Security lookup tools
+        if tool in ['security-lookup', 'grep-search', 'regex-match']:
+            # Extract potential CVE IDs from log content
+            import re
+            cve_pattern = r'CVE-\d{4}-\d{4,7}'
+            cves = re.findall(cve_pattern, log_content)
+
+            if cves:
+                return {'query': cves[0]}  # Search for first CVE found
+            else:
+                # Search for common vulnerability keywords
+                return {'query': 'security vulnerability'}
+
+        # Knowledge base search tools
+        elif tool in ['kb-search', 'log-parser', 'error-classifier']:
+            # Extract error messages from log
+            import re
+            error_pattern = r'(ERROR|FATAL|CRITICAL)[:\s]+(.{0,100})'
+            errors = re.findall(error_pattern, log_content, re.IGNORECASE)
+
+            if errors:
+                # Use first error message as search query
+                error_msg = errors[0][1].strip()
+                return {'query': error_msg}
+            else:
+                return {'query': 'error troubleshooting'}
+
+        # Fallback
+        else:
+            return {'context': 'analysis', 'file': log_file_name}
+
+    async def _call_openrouter(self, task_id: str, model: str, system_prompt: str,
                               tool_results: List[Dict], log_content: str,
                               log_file_name: str) -> Dict[str, Any]:
-        """Call OpenRouter API for AI analysis"""
+        """Call OpenRouter API for AI analysis with streaming support"""
         from openai import AsyncOpenAI
+        import time
+        from sentence_detector import SentenceDetector
 
         # Initialize OpenRouter client
         client = AsyncOpenAI(
@@ -872,10 +954,11 @@ class AgenticTaskExecutor(TaskExecutor):
         # Prepare the analysis prompt
         user_prompt = self._build_analysis_prompt(log_content, log_file_name, tool_results)
 
-        # Call OpenRouter
-        logger.info(f"Calling OpenRouter with model: {model}")
+        # Call OpenRouter with STREAMING enabled
+        logger.info(f"Calling OpenRouter with model: {model} (STREAMING WITH SENTENCE DETECTION)")
 
-        response = await client.chat.completions.create(
+        # Use streaming to get granular events
+        stream = await client.chat.completions.create(
             model=model,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -886,15 +969,183 @@ class AgenticTaskExecutor(TaskExecutor):
                 "X-Title": os.getenv('OPENROUTER_APP_NAME', 'BPMN-Workflow-Executor')
             },
             temperature=0.3,
-            max_tokens=2000
+            max_tokens=2000,
+            stream=True  # ENABLE STREAMING
         )
 
-        # Extract analysis from response
-        analysis_text = response.choices[0].message.content
+        # Accumulate the full response while streaming
+        analysis_text = ""
+        thread_id = f"thread_{task_id}"
+        sentence_count = 0
 
-        logger.info(f"OpenRouter analysis complete. Usage: {response.usage}")
+        # Initialize sentence detector
+        sentence_detector = SentenceDetector()
 
-        # Parse the analysis (expecting JSON or structured text)
+        # Create thread in event store
+        if self.agui_server and self.agui_server.event_store:
+            self.agui_server.event_store.ensure_thread(task_id, thread_id)
+
+        # Stream the response token by token
+        total_tokens = 0
+        chunk_count = 0
+
+        logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        logger.info("🚀 STARTING STREAMING - Listening for chunks from OpenRouter")
+        logger.info("   Using SENTENCE BOUNDARY DETECTION for replay")
+        logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+        try:
+            async for chunk in stream:
+                # Check for cancellation during streaming
+                if self.agui_server and self.agui_server.is_cancelled(task_id):
+                    logger.info(f"🛑 Task {task_id} cancelled during streaming (after {total_tokens} tokens)")
+
+                    # Send cancelling notification
+                    await self.agui_server.send_task_cancelling(task_id)
+
+                    # End the message with partial content
+                    if self.agui_server:
+                        await self.agui_server.send_text_message_end(task_id, message_id)
+
+                    # Notify cancellation complete with partial result
+                    await self.agui_server.send_task_cancelled_complete(
+                        task_id,
+                        "User cancelled during streaming",
+                        {
+                            'partial_response': analysis_text,
+                            'tokens_generated': total_tokens,
+                            'completion_percentage': min(100, int((total_tokens / 2000) * 100))
+                        }
+                    )
+
+                    # Return partial result
+                    return {
+                        'analysis': f'Analysis partially completed (cancelled by user)',
+                        'log_file': log_file_name,
+                        'log_size': len(log_content) if log_content else 0,
+                        'tools_used': [t['tool'] for t in tool_results],
+                        'confidence': 0.5,  # Lower confidence for partial result
+                        'findings': [analysis_text] if analysis_text else ['Task cancelled before completion'],
+                        'model_used': model,
+                        'tokens_used': total_tokens,
+                        'status': 'cancelled',
+                        'reason': 'User cancelled during streaming'
+                    }
+
+                chunk_count += 1
+                if chunk.choices and len(chunk.choices) > 0:
+                    delta = chunk.choices[0].delta
+
+                    # Handle content delta (text chunks)
+                    if delta.content:
+                        content_chunk = delta.content
+                        analysis_text += content_chunk
+                        total_tokens += 1
+
+                        # Add chunk to sentence detector
+                        completed_sentences = sentence_detector.add_chunk(content_chunk)
+
+                        # If we have complete sentences, send them as TEXT_MESSAGE_CHUNK events
+                        for sentence in completed_sentences:
+                            sentence_count += 1
+                            sentence_message_id = f"msg_{task_id}_s{sentence_count}_{int(time.time() * 1000)}"
+                            timestamp = datetime.now(timezone.utc).isoformat()
+
+                            logger.info(f"📝 SENTENCE #{sentence_count} COMPLETE")
+                            logger.info(f"   Message ID: {sentence_message_id}")
+                            logger.info(f"   Length: {len(sentence)} chars")
+                            logger.info(f"   Text: {sentence[:100]}..." if len(sentence) > 100 else f"   Text: {sentence}")
+
+                            # Store sentence in SQLite for replay
+                            if self.agui_server and self.agui_server.event_store:
+                                # Store complete sentence as a message
+                                self.agui_server.event_store.store_message_start(
+                                    task_id, thread_id, sentence_message_id, timestamp
+                                )
+                                self.agui_server.event_store.update_message_content(
+                                    sentence_message_id, sentence
+                                )
+                                self.agui_server.event_store.complete_message(sentence_message_id)
+                                logger.info(f"   💾 Stored in SQLite")
+
+                            # Send TEXT_MESSAGE_CHUNK to frontend
+                            if self.agui_server:
+                                await self.agui_server.send_text_message_chunk(
+                                    element_id=task_id,
+                                    message_id=sentence_message_id,
+                                    content=sentence,
+                                    role='assistant'
+                                )
+                                logger.info(f"   ✅ Sent TEXT_MESSAGE_CHUNK to frontend")
+
+                    # Handle reasoning/thinking (if model supports extended thinking)
+                    if hasattr(delta, 'reasoning') and delta.reasoning:
+                        logger.info(f"🧠 Model reasoning: {delta.reasoning}")
+                        # Could add a separate event type for reasoning if desired
+
+                    # Handle function/tool calls (if model wants to use tools)
+                    if hasattr(delta, 'tool_calls') and delta.tool_calls:
+                        for tool_call in delta.tool_calls:
+                            logger.info(f"🔧 Model wants to call tool: {tool_call}")
+                        # Could handle tool execution here
+
+            # Flush any remaining text as the final sentence
+            final_sentence = sentence_detector.flush()
+            if final_sentence:
+                sentence_count += 1
+                sentence_message_id = f"msg_{task_id}_s{sentence_count}_{int(time.time() * 1000)}"
+                timestamp = datetime.now(timezone.utc).isoformat()
+
+                logger.info(f"📝 FINAL SENTENCE #{sentence_count}")
+                logger.info(f"   Message ID: {sentence_message_id}")
+                logger.info(f"   Length: {len(final_sentence)} chars")
+                logger.info(f"   Text: {final_sentence[:100]}..." if len(final_sentence) > 100 else f"   Text: {final_sentence}")
+
+                # Store final sentence in SQLite
+                if self.agui_server and self.agui_server.event_store:
+                    self.agui_server.event_store.store_message_start(
+                        task_id, thread_id, sentence_message_id, timestamp
+                    )
+                    self.agui_server.event_store.update_message_content(
+                        sentence_message_id, final_sentence
+                    )
+                    self.agui_server.event_store.complete_message(sentence_message_id)
+                    logger.info(f"   💾 Stored in SQLite")
+
+                # Send final sentence as TEXT_MESSAGE_CHUNK
+                if self.agui_server:
+                    await self.agui_server.send_text_message_chunk(
+                        element_id=task_id,
+                        message_id=sentence_message_id,
+                        content=final_sentence,
+                        role='assistant'
+                    )
+                    logger.info(f"   ✅ Sent final TEXT_MESSAGE_CHUNK to frontend")
+
+        except Exception as stream_error:
+            import traceback
+            logger.error(f"❌ STREAMING ERROR: {stream_error}")
+            logger.error(f"Error type: {type(stream_error).__name__}")
+            logger.error(f"Full traceback:\n{traceback.format_exc()}")
+            logger.error(f"Partial response collected: {len(analysis_text)} chars")
+
+            # If we have any partial response, use it
+            if not analysis_text:
+                raise Exception(f"Streaming failed with no content: {stream_error}")
+
+            logger.warning(f"Using partial response from streaming ({len(analysis_text)} chars)")
+
+        logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        logger.info(f"✅ STREAMING COMPLETE")
+        logger.info(f"   Total OpenRouter chunks: {chunk_count}")
+        logger.info(f"   Total content tokens: {total_tokens}")
+        logger.info(f"   Total sentences detected: {sentence_count}")
+        logger.info(f"   Final text length: {len(analysis_text)} chars")
+        logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+        logger.info(f"OpenRouter streaming analysis complete. Tokens: ~{total_tokens}")
+
+        # Parse the complete analysis (expecting JSON or structured text)
         try:
             # Try to parse as JSON
             analysis_data = json.loads(analysis_text)
@@ -904,14 +1155,14 @@ class AgenticTaskExecutor(TaskExecutor):
             findings = [analysis_text]
 
         return {
-            'analysis': f'Analysis completed using {model} via OpenRouter',
+            'analysis': f'Analysis completed using {model} via OpenRouter (streamed)',
             'log_file': log_file_name,
             'log_size': len(log_content) if log_content else 0,
             'tools_used': [t['tool'] for t in tool_results],
             'confidence': 0.92,
             'findings': findings,
             'model_used': model,
-            'tokens_used': response.usage.total_tokens if response.usage else 0
+            'tokens_used': total_tokens
         }
 
     def _build_analysis_prompt(self, log_content: str, log_file_name: str,
