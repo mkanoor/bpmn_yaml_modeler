@@ -1,0 +1,191 @@
+process:
+  id: process_1
+  name: Simple Boundary Events Test
+
+  pools:
+    - id: pool_1
+      name: Boundary Events Demo
+      x: 50
+      y: 50
+      width: 1200
+      height: 400
+      lanes:
+        - id: lane_1
+          name: Main Flow
+          height: 400
+
+  elements:
+    # Start
+    - id: start_1
+      type: startEvent
+      name: Start
+      x: 150
+      y: 200
+      poolId: pool_1
+      laneId: lane_1
+      properties: {}
+
+    # Task 1 - Will complete successfully
+    - id: task_success
+      type: scriptTask
+      name: Quick Task (Completes)
+      x: 350
+      y: 100
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        scriptFormat: Python
+        script: |
+          import time
+          print("🔵 Quick task starting...")
+          time.sleep(1)
+          print("🔵 Quick task completed!")
+          result = {'status': 'success'}
+
+    # Timer boundary on task_success (won't trigger - task completes first)
+    - id: timer_boundary_1
+      type: timerBoundaryEvent
+      name: 5s Timeout
+      x: 395
+      y: 75
+      poolId: pool_1
+      laneId: lane_1
+      attachedToRef: task_success
+      properties:
+        timerDuration: PT5S
+        cancelActivity: true
+
+    # Task 2 - Will timeout
+    - id: task_timeout
+      type: scriptTask
+      name: Slow Task (Will Timeout)
+      x: 350
+      y: 250
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        scriptFormat: Python
+        script: |
+          import time
+          print("🟡 Slow task starting...")
+          print("🟡 Sleeping for 10 seconds...")
+          time.sleep(10)  # Will timeout before completing
+          print("🟡 Slow task completed (you won't see this)")
+          result = {'status': 'completed'}
+
+    # Timer boundary on task_timeout (WILL trigger after 3s)
+    - id: timer_boundary_2
+      type: timerBoundaryEvent
+      name: 3s Timeout
+      x: 395
+      y: 225
+      poolId: pool_1
+      laneId: lane_1
+      attachedToRef: task_timeout
+      properties:
+        timerDuration: PT3S
+        cancelActivity: true
+
+    # Timeout handler
+    - id: handle_timeout
+      type: scriptTask
+      name: Handle Timeout
+      x: 550
+      y: 150
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        scriptFormat: Python
+        script: |
+          print("⏰ Timeout handler triggered!")
+          print("⏰ Task took too long, handling gracefully...")
+          result = {'status': 'timeout_handled'}
+
+    # Merge gateway
+    - id: merge_gateway
+      type: inclusiveGateway
+      name: Merge
+      x: 750
+      y: 200
+      poolId: pool_1
+      laneId: lane_1
+      properties: {}
+
+    # Final task
+    - id: final_task
+      type: scriptTask
+      name: Complete
+      x: 900
+      y: 200
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        scriptFormat: Python
+        script: |
+          print("✅ Workflow completed!")
+          result = {'completed': True}
+
+    # End
+    - id: end_1
+      type: endEvent
+      name: End
+      x: 1050
+      y: 200
+      poolId: pool_1
+      laneId: lane_1
+      properties: {}
+
+  connections:
+    # Start to fork
+    - id: conn1
+      type: sequenceFlow
+      from: start_1
+      to: task_success
+      properties: {}
+
+    - id: conn2
+      type: sequenceFlow
+      from: start_1
+      to: task_timeout
+      properties: {}
+
+    # Timer boundary to timeout handler
+    - id: conn3
+      type: sequenceFlow
+      name: Timeout
+      from: timer_boundary_2
+      to: handle_timeout
+      properties: {}
+
+    # Success paths to merge
+    - id: conn4
+      type: sequenceFlow
+      from: task_success
+      to: merge_gateway
+      properties: {}
+
+    - id: conn5
+      type: sequenceFlow
+      from: task_timeout
+      to: merge_gateway
+      properties: {}
+
+    - id: conn6
+      type: sequenceFlow
+      from: handle_timeout
+      to: merge_gateway
+      properties: {}
+
+    # Merge to final
+    - id: conn7
+      type: sequenceFlow
+      from: merge_gateway
+      to: final_task
+      properties: {}
+
+    # Final to end
+    - id: conn8
+      type: sequenceFlow
+      from: final_task
+      to: end_1
+      properties: {}

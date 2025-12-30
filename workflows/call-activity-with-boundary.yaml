@@ -1,0 +1,290 @@
+process:
+  id: process_1
+  name: Call Activity with Boundary Events Example
+
+  # Reusable subprocess definitions
+  subProcessDefinitions:
+    - id: subprocess_validate_order
+      name: Validate Order Subprocess
+      elements:
+        - id: sub_start
+          type: startEvent
+          name: Start
+          x: 100
+          y: 150
+          properties: {}
+
+        - id: sub_validate
+          type: scriptTask
+          name: Validate Order Data
+          x: 250
+          y: 150
+          properties:
+            scriptFormat: Python
+            resultVariable: validationResult
+            script: |
+              import random
+              # Simulate validation - 80% success rate
+              is_valid = random.random() < 0.8
+              if is_valid:
+                  print("✅ Order validation passed")
+                  result = 'valid'
+              else:
+                  print("❌ Order validation failed")
+                  result = 'invalid'
+
+        - id: sub_check
+          type: exclusiveGateway
+          name: Valid?
+          x: 400
+          y: 150
+          properties: {}
+
+        - id: sub_success
+          type: endEvent
+          name: Success
+          x: 550
+          y: 100
+          properties: {}
+
+        - id: sub_error
+          type: endEvent
+          name: Validation Failed
+          x: 550
+          y: 200
+          properties: {}
+
+      connections:
+        - id: sub_conn1
+          type: sequenceFlow
+          from: sub_start
+          to: sub_validate
+          properties: {}
+
+        - id: sub_conn2
+          type: sequenceFlow
+          from: sub_validate
+          to: sub_check
+          properties: {}
+
+        - id: sub_conn3
+          type: sequenceFlow
+          name: Valid
+          from: sub_check
+          to: sub_success
+          properties:
+            condition: ${validationResult == 'valid'}
+
+        - id: sub_conn4
+          type: sequenceFlow
+          name: Invalid
+          from: sub_check
+          to: sub_error
+          properties:
+            condition: ${validationResult == 'invalid'}
+
+  pools:
+    - id: pool_1
+      name: Order Processing with Error Handling
+      x: 50
+      y: 50
+      width: 1400
+      height: 500
+      lanes:
+        - id: lane_1
+          name: Main Process
+          height: 500
+
+  elements:
+    # Start
+    - id: start_1
+      type: startEvent
+      name: Start
+      x: 150
+      y: 200
+      poolId: pool_1
+      laneId: lane_1
+      properties: {}
+
+    # Call Activity - calls the subprocess
+    - id: call_validate
+      type: callActivity
+      name: Validate Order
+      x: 350
+      y: 200
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        calledElement: subprocess_validate_order
+        inheritVariables: true
+
+    # Error Boundary Event - catches ANY error from subprocess
+    - id: error_boundary_call
+      type: errorBoundaryEvent
+      name: Catch Error
+      x: 395
+      y: 225
+      poolId: pool_1
+      laneId: lane_1
+      attachedToRef: call_validate
+      properties:
+        errorCode: ""  # Catch all errors
+        cancelActivity: true
+
+    # Timer Boundary Event - timeout if subprocess takes too long
+    - id: timer_boundary_call
+      type: timerBoundaryEvent
+      name: 2min Timeout
+      x: 395
+      y: 175
+      poolId: pool_1
+      laneId: lane_1
+      attachedToRef: call_validate
+      properties:
+        timerDuration: PT2M  # 2 minutes
+        cancelActivity: true
+
+    # Error handler
+    - id: handle_error
+      type: scriptTask
+      name: Log Error & Notify Admin
+      x: 500
+      y: 330
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        scriptFormat: Python
+        script: |
+          print("⚠️ Validation subprocess failed!")
+          print("⚠️ Sending admin notification...")
+          result = {'status': 'error_handled'}
+
+    # Timeout handler
+    - id: handle_timeout
+      type: scriptTask
+      name: Log Timeout & Escalate
+      x: 500
+      y: 100
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        scriptFormat: Python
+        script: |
+          print("⏰ Validation subprocess timed out after 2 minutes!")
+          print("⏰ Escalating to manager...")
+          result = {'status': 'timeout_escalated'}
+
+    # Success path - subprocess completed without errors
+    - id: process_order
+      type: scriptTask
+      name: Process Order
+      x: 650
+      y: 200
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        scriptFormat: Python
+        resultVariable: processResult
+        script: |
+          print("📦 Processing validated order...")
+          print("📦 Order processed successfully!")
+          result = {'status': 'processed', 'orderId': 12345}
+
+    # Merge gateway - all paths join here
+    - id: merge_gateway
+      type: inclusiveGateway
+      name: Merge Paths
+      x: 850
+      y: 200
+      poolId: pool_1
+      laneId: lane_1
+      properties: {}
+
+    # Final task
+    - id: final_task
+      type: scriptTask
+      name: Complete Workflow
+      x: 1000
+      y: 200
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        scriptFormat: Python
+        script: |
+          print("✅ Workflow completed!")
+          result = {'completed': True}
+
+    # End
+    - id: end_1
+      type: endEvent
+      name: End
+      x: 1150
+      y: 200
+      poolId: pool_1
+      laneId: lane_1
+      properties: {}
+
+  connections:
+    # Main flow
+    - id: conn1
+      type: sequenceFlow
+      from: start_1
+      to: call_validate
+      properties: {}
+
+    # Error boundary to error handler
+    - id: conn2
+      type: sequenceFlow
+      name: Error
+      from: error_boundary_call
+      to: handle_error
+      properties: {}
+
+    # Timer boundary to timeout handler
+    - id: conn3
+      type: sequenceFlow
+      name: Timeout
+      from: timer_boundary_call
+      to: handle_timeout
+      properties: {}
+
+    # Success path
+    - id: conn4
+      type: sequenceFlow
+      from: call_validate
+      to: process_order
+      properties: {}
+
+    - id: conn5
+      type: sequenceFlow
+      from: process_order
+      to: merge_gateway
+      properties: {}
+
+    # Error handler to merge
+    - id: conn6
+      type: sequenceFlow
+      from: handle_error
+      to: merge_gateway
+      properties: {}
+
+    # Timeout handler to merge
+    - id: conn7
+      type: sequenceFlow
+      from: handle_timeout
+      to: merge_gateway
+      properties: {}
+
+    # Merge to final task
+    - id: conn8
+      type: sequenceFlow
+      from: merge_gateway
+      to: final_task
+      properties: {}
+
+    # Final to end
+    - id: conn9
+      type: sequenceFlow
+      from: final_task
+      to: end_1
+      properties: {}

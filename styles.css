@@ -316,6 +316,24 @@
     --connection-point: #dd4124;
 }
 
+/* Cloud Dancer - PANTONE 11-4201 */
+[data-theme="cloud-dancer"] {
+    --primary-color: #a3a5a8;
+    --primary-dark: #7d7f82;
+    --primary-light: #c4c5c7;
+    --header-bg: #6b6d70;
+    --header-text: #ffffff;
+    --accent-color: #a3a5a8;
+    --success-color: #27ae60;
+    --success-dark: #229954;
+    --danger-color: #e74c3c;
+    --danger-dark: #c0392b;
+    --warning-color: #f39c12;
+    --element-stroke: #6b6d70;
+    --selection-glow: #a3a5a8;
+    --connection-point: #a3a5a8;
+}
+
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     overflow: hidden;
@@ -590,9 +608,26 @@ header h1 {
     stroke-width: 2;
 }
 
+/* Call Activity - thicker border to distinguish from regular tasks */
+.bpmn-task.call-activity {
+    stroke-width: 4 !important;
+    stroke: var(--element-stroke);
+}
+
 .bpmn-event {
     fill: var(--element-fill);
     stroke: var(--element-stroke);
+}
+
+/* End event outcome colors */
+.bpmn-event.outcome-success {
+    fill: #27ae60 !important;
+    stroke: #1e8449 !important;
+}
+
+.bpmn-event.outcome-failure {
+    fill: #e74c3c !important;
+    stroke: #c0392b !important;
 }
 
 .bpmn-gateway {
@@ -1243,9 +1278,8 @@ button:active:not(:disabled) {
     border: 2px solid #3498db;
     border-radius: 8px;
     box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    min-width: 300px;
-    max-width: 500px;
-    max-height: 400px;
+    width: 500px;  /* Slightly wider */
+    height: 600px;  /* Taller to show more items */
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -1272,11 +1306,23 @@ button:active:not(:disabled) {
     justify-content: space-between;
     align-items: center;
     border-bottom: 1px solid #2980b9;
+    gap: 12px;
 }
 
 .feedback-title {
     font-weight: 600;
     font-size: 14px;
+    flex: 0 0 auto;
+}
+
+.feedback-count {
+    font-size: 11px;
+    background: rgba(255, 255, 255, 0.2);
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+    flex: 0 0 auto;
 }
 
 .feedback-close {
@@ -1300,24 +1346,130 @@ button:active:not(:disabled) {
 }
 
 .feedback-content {
-    padding: 16px;
-    overflow-y: auto;
-    flex: 1;
+    padding: 12px;
+    padding-right: 4px;  /* Less padding on right to show scrollbar */
+    overflow-y: scroll !important;  /* Always show scrollbar - force it */
+    overflow-x: hidden;
+    flex: 1 1 auto;
+    min-height: 0;  /* Allow flex child to shrink */
+    max-height: 100%;  /* Ensure it respects parent height */
+    background: #f9f9f9;  /* Light background to see the container */
+    position: relative;
+    scrollbar-width: auto;  /* Firefox: show auto scrollbar (not thin) */
+    scrollbar-color: #3498db #e8e8e8;  /* Firefox: thumb and track colors */
+}
+
+/* Scroll indicator - shows when content is scrollable */
+.feedback-content::after {
+    content: '↓ More items below ↓';
+    position: sticky;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(to bottom, transparent, rgba(52, 152, 219, 0.9));
+    color: white;
+    text-align: center;
+    padding: 8px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+
+.feedback-content.has-more-content::after {
+    opacity: 1;
+}
+
+/* Event Timeline Items */
+.feedback-event-item {
+    margin-bottom: 12px;
+    padding: 10px;
+    background: #ffffff;
+    border-left: 4px solid #3498db;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+    transition: all 0.2s;
+    min-height: 50px;  /* Ensure items have some height */
+}
+
+/* Different colors for different event types */
+.feedback-event-item.thinking-event {
+    border-left-color: #9b59b6;
+    background: #faf8fc;
+}
+
+.feedback-event-item.tool-event {
+    border-left-color: #e67e22;
+    background: #fef9f5;
+}
+
+.feedback-event-item:hover {
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+    transform: translateX(2px);
+}
+
+.event-timestamp {
+    font-size: 10px;
+    color: #7f8c8d;
+    margin-bottom: 4px;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.sentence-number {
+    background: #3498db;
+    color: white;
+    padding: 2px 6px;
+    border-radius: 8px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+}
+
+.event-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+    font-weight: 600;
+    font-size: 12px;
+    color: #2c3e50;
+}
+
+.event-icon {
+    font-size: 14px;
+}
+
+.event-title {
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
 }
 
 .feedback-message {
     padding: 8px 12px;
     background: #f8f9fa;
-    border-radius: 6px;
-    margin-bottom: 8px;
+    border-radius: 4px;
     font-size: 13px;
     line-height: 1.5;
     color: #2c3e50;
     word-wrap: break-word;
+    white-space: pre-wrap;
+}
+
+.feedback-message.streaming {
+    background: #e8f4f8;
+    border: 1px dashed #3498db;
 }
 
 .feedback-message.complete {
-    border-left: 3px solid #27ae60;
+    background: #d5f4e6;
+    border-left: 2px solid #27ae60;
 }
 
 .typing-indicator {
@@ -1389,6 +1541,12 @@ button:active:not(:disabled) {
     color: #856404;
     font-size: 11px;
     text-transform: uppercase;
+    font-weight: 500;
+}
+
+.tool-status.running {
+    color: #3498db;
+    animation: pulse 1.5s ease-in-out infinite;
 }
 
 .tool-status.complete {
@@ -1420,19 +1578,308 @@ button:active:not(:disabled) {
 
 /* Scrollbar styling for feedback panel */
 .feedback-content::-webkit-scrollbar {
-    width: 8px;
+    width: 12px;  /* Wider for better visibility */
+    display: block;  /* Force display */
 }
 
 .feedback-content::-webkit-scrollbar-track {
-    background: #f1f1f1;
-    border-radius: 4px;
+    background: #e8e8e8;
+    border-radius: 6px;
+    border: 1px solid #d0d0d0;
 }
 
 .feedback-content::-webkit-scrollbar-thumb {
-    background: #cbd5e0;
-    border-radius: 4px;
+    background: #3498db;  /* Blue to match theme */
+    border-radius: 6px;
+    border: 2px solid #e8e8e8;  /* Add contrast border */
+    min-height: 40px;  /* Ensure thumb is always visible */
 }
 
 .feedback-content::-webkit-scrollbar-thumb:hover {
-    background: #a0aec0;
+    background: #2980b9;  /* Darker blue on hover */
+}
+
+.feedback-content::-webkit-scrollbar-thumb:active {
+    background: #21618c;  /* Even darker when dragging */
+}
+
+/* ===== TASK CANCELLATION STYLES ===== */
+
+.cancel-task-btn {
+    background: #dc3545;
+    color: white;
+    border: none;
+    padding: 0.6rem 1rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 0.9rem;
+    margin-bottom: 0.75rem;
+    width: 100%;
+    transition: all 0.2s ease;
+}
+
+.cancel-task-btn:hover:not(:disabled) {
+    background: #c82333;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(220, 53, 69, 0.3);
+}
+
+.cancel-task-btn:disabled {
+    background: #6c757d;
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+
+.cancel-task-btn.cancelling {
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+.cancelling-notice {
+    background: #fff3cd;
+    border-left: 4px solid #ffc107;
+    padding: 0.75rem;
+    margin-bottom: 0.75rem;
+    border-radius: 4px;
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+.cancellation-notice {
+    background: #f8d7da;
+    border-left: 4px solid #dc3545;
+    padding: 0.75rem;
+    margin-top: 0.75rem;
+    border-radius: 4px;
+}
+
+.cancel-icon {
+    font-size: 1.2em;
+    margin-right: 0.5rem;
+}
+
+.cancel-reason {
+    font-size: 0.9em;
+    color: #721c24;
+    margin-top: 0.25rem;
+    padding-left: 1.7rem;
+}
+
+.partial-result {
+    margin-top: 0.5rem;
+    padding: 0.5rem;
+    background: #fff;
+    border-radius: 3px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.85em;
+    max-height: 200px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+}
+
+.cancel-error-notice {
+    background: #f8d7da;
+    border-left: 4px solid #dc3545;
+    padding: 0.75rem;
+    margin-top: 0.5rem;
+    border-radius: 4px;
+    animation: slideIn 0.3s ease-out;
+}
+
+.cancel-error {
+    font-size: 0.9em;
+    color: #721c24;
+    margin-top: 0.25rem;
+    padding-left: 1.7rem;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.7;
+    }
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateY(-10px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+/* Replay cancellation notices */
+.feedback-message.cancelled {
+    background: #f8d7da;
+    border-left: 3px solid #dc3545;
+}
+
+.message-cancelled-notice {
+    font-size: 0.85em;
+    color: #721c24;
+    margin-top: 0.5rem;
+    font-style: italic;
+}
+
+.replay-cancellation-notice {
+    background: #fff3cd;
+    border-left: 4px solid #ffc107;
+    padding: 0.75rem;
+    margin-top: 0.75rem;
+    border-radius: 4px;
+}
+
+/* Subprocess Definitions Panel */
+.subprocess-definitions-section {
+    margin-top: 1rem;
+    border-top: 2px solid #e0e0e0;
+    padding-top: 1rem;
+}
+
+.subprocess-def-list {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.subprocess-def-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem;
+    margin: 0.3rem 0;
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.subprocess-def-item:hover {
+    background: #e9ecef;
+    border-color: var(--primary-color);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.subprocess-def-item.active {
+    background: var(--primary-light);
+    border-color: var(--primary-color);
+    color: white;
+}
+
+.subprocess-def-name {
+    font-size: 0.9rem;
+    font-weight: 500;
+    flex: 1;
+}
+
+.subprocess-def-actions {
+    display: flex;
+    gap: 0.3rem;
+}
+
+.btn-icon {
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    padding: 0.2rem 0.5rem;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 1.1rem;
+    line-height: 1;
+    transition: background 0.2s;
+}
+
+.btn-icon:hover {
+    background: var(--primary-dark);
+}
+
+.btn-icon.danger {
+    background: var(--danger-color);
+}
+
+.btn-icon.danger:hover {
+    background: var(--danger-dark);
+}
+
+/* ===== TOKEN ANIMATION ===== */
+
+/* Token layer - sits on top of all other elements in mainGroup */
+#tokensLayer {
+    pointer-events: none;
+    /* z-index doesn't work in SVG - rendering order is determined by DOM order */
+    /* tokensLayer is appended last to mainGroup, so it renders on top */
+}
+
+/* BPMN Token - animated circle that shows workflow execution flow */
+.bpmn-token {
+    pointer-events: none;
+    transition: opacity 0.3s ease-out;
+    /* Removed pulsing animation - too distracting and reduces visibility */
+    /* Tokens are now always fully opaque and highly visible */
+}
+
+/* Token appearing animation */
+@keyframes tokenAppear {
+    from {
+        opacity: 0;
+        transform: scale(0.5);
+    }
+    to {
+        opacity: 0.9;
+        transform: scale(1);
+    }
+}
+
+/* Token disappearing animation */
+@keyframes tokenDisappear {
+    from {
+        opacity: 0.9;
+        transform: scale(1);
+    }
+    to {
+        opacity: 0;
+        transform: scale(0.5);
+    }
+}
+
+/* ===== DEADLOCK DETECTION ===== */
+
+/* Deadlocked gateway indicator */
+.bpmn-element.deadlocked {
+    filter: drop-shadow(0 0 8px rgba(231, 76, 60, 0.8));
+}
+
+/* Deadlock pulse animation for gateway border */
+@keyframes deadlockPulse {
+    0%, 100% {
+        stroke-width: 4;
+        opacity: 1;
+    }
+    50% {
+        stroke-width: 6;
+        opacity: 0.7;
+    }
+}
+
+/* Deadlock warning icon */
+.deadlock-warning {
+    animation: deadlockBounce 2s ease-in-out infinite;
+}
+
+@keyframes deadlockBounce {
+    0%, 100% {
+        transform: translateY(0);
+    }
+    50% {
+        transform: translateY(-5px);
+    }
+}
+
+/* Deadlock status text */
+.deadlock-status {
+    font-family: monospace;
 }

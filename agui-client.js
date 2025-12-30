@@ -14,6 +14,22 @@ class AGUIClient {
         this.cancellableTasks = new Set();
         this.cancelledTasks = new Set();
 
+        // Token animation
+        this.tokens = new Map(); // elementId -> array of token SVG elements (for parallel flows)
+        this.tokenCounter = 0;
+        this.tokenJoinWaiting = new Map(); // elementId -> { expected: N, arrived: [{token, timestamp}], timeoutId: timer }
+        this.tokenColors = [
+            { fill: '#3498db', stroke: '#2980b9', shadow: 'rgba(52, 152, 219, 0.8)', name: 'blue' },
+            { fill: '#e74c3c', stroke: '#c0392b', shadow: 'rgba(231, 76, 60, 0.8)', name: 'red' },
+            { fill: '#2ecc71', stroke: '#27ae60', shadow: 'rgba(46, 204, 113, 0.8)', name: 'green' },
+            { fill: '#f39c12', stroke: '#e67e22', shadow: 'rgba(243, 156, 18, 0.8)', name: 'orange' },
+            { fill: '#9b59b6', stroke: '#8e44ad', shadow: 'rgba(155, 89, 182, 0.8)', name: 'purple' },
+            { fill: '#1abc9c', stroke: '#16a085', shadow: 'rgba(26, 188, 156, 0.8)', name: 'teal' },
+            { fill: '#e91e63', stroke: '#c2185b', shadow: 'rgba(233, 30, 99, 0.8)', name: 'pink' },
+            { fill: '#ff9800', stroke: '#f57c00', shadow: 'rgba(255, 152, 0, 0.8)', name: 'amber' }
+        ];
+        this.deadlockTimeout = 30000; // 30 seconds - if join doesn't complete, it's a deadlock
+
         this.connect();
     }
 
@@ -208,6 +224,10 @@ class AGUIClient {
     handleWorkflowStarted(message) {
         console.log('🚀 Workflow started:', message.instanceId);
 
+        // Clear any existing tokens and highlights from previous execution
+        console.log('🧹 Clearing previous execution state (tokens, highlights, checkmarks)');
+        this.clearAllHighlights();
+
         // Build notification message with optional file name
         let notificationMsg = message.workflowName;
         if (message.workflowFile) {
@@ -263,11 +283,14 @@ class AGUIClient {
         const outcomeEmoji = message.outcome === 'success' ? '✅' : '❌';
         const outcomeClass = message.outcome === 'success' ? 'success' : 'error';
 
-        // After workflow completes, mark any elements on not-taken paths as skipped
-        this.markNotTakenPathsAsSkipped();
+        // Wait 2 seconds before marking skipped paths to allow tokens to finish animating
+        setTimeout(() => {
+            // After workflow completes, mark any elements on not-taken paths as skipped
+            this.markNotTakenPathsAsSkipped();
 
-        // Mark end events with outcome color
-        this.markEndEventsWithOutcome(message.outcome);
+            // Mark end events with outcome color
+            this.markEndEventsWithOutcome(message.outcome);
+        }, 2000); // Delay to allow final token animations to complete
 
         this.showNotification(
             `Workflow ${message.outcome}`,
@@ -384,7 +407,253 @@ class AGUIClient {
         }
     }
 
+    // ===== TOKEN ANIMATION =====
+
+    createToken(elementId, offsetIndex = 0, colorIndex = 0) {
+        console.log(`    🔵 createToken called: elementId=${elementId}, offsetIndex=${offsetIndex}, colorIndex=${colorIndex}`);
+        const element = document.querySelector(`[data-id="${elementId}"]`);
+        if (!element) {
+            console.warn(`    ❌ createToken: Element ${elementId} not found in DOM`);
+            return null;
+        }
+
+        // Get element position
+        const transform = element.getAttribute('transform');
+        let x = 0, y = 0;
+        if (transform) {
+            const match = transform.match(/translate\(([^,]+),\s*([^)]+)\)/);
+            if (match) {
+                x = parseFloat(match[1]);
+                y = parseFloat(match[2]);
+            }
+        }
+
+        // Apply offset for multiple tokens (spread them out)
+        const offset = offsetIndex * 12; // 12px spacing between tokens
+        x += offset;
+
+        // Get color for this token
+        const color = this.tokenColors[colorIndex % this.tokenColors.length];
+
+        // Create token (animated circle)
+        const tokenId = `token-${this.tokenCounter++}`;
+        const token = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        token.setAttribute('id', tokenId);
+        token.setAttribute('class', 'bpmn-token');
+        token.setAttribute('data-token-color', color.name);
+        token.setAttribute('cx', x);
+        token.setAttribute('cy', y);
+        token.setAttribute('r', '10'); // Increased from 8 to 10 for better visibility
+        token.setAttribute('fill', color.fill);
+        token.setAttribute('stroke', color.stroke);
+        token.setAttribute('stroke-width', '3'); // Increased from 2 to 3 for better visibility
+        token.setAttribute('opacity', '1'); // Full opacity for better visibility
+
+        // Add glow effect with stronger shadow
+        token.style.filter = `drop-shadow(0 0 8px ${color.shadow})`;
+
+        // Add to tokens layer (or create if doesn't exist)
+        let tokensLayer = document.getElementById('tokensLayer');
+        if (!tokensLayer) {
+            // IMPORTANT: Append to mainGroup, not root SVG, so tokens zoom/pan with canvas
+            const mainGroup = document.getElementById('mainGroup');
+            if (mainGroup) {
+                tokensLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                tokensLayer.setAttribute('id', 'tokensLayer');
+                tokensLayer.setAttribute('style', 'pointer-events: none;'); // Tokens don't block mouse events
+                mainGroup.appendChild(tokensLayer); // Append as LAST child of mainGroup (renders on top)
+                console.log(`    ✅ Created tokensLayer and appended to mainGroup (will render on top of all elements)`);
+            } else {
+                console.error(`    ❌ mainGroup not found - cannot create tokensLayer!`);
+            }
+        }
+
+        if (tokensLayer) {
+            tokensLayer.appendChild(token);
+            console.log(`    ✅ Token appended to tokensLayer`);
+        } else {
+            console.warn(`    ❌ tokensLayer not found - token NOT added to DOM!`);
+        }
+
+        // Store token in array for this element
+        if (!this.tokens.has(elementId)) {
+            this.tokens.set(elementId, []);
+        }
+        this.tokens.get(elementId).push(token);
+
+        const colorEmoji = this.getColorEmoji(color.name);
+        console.log(`    ${colorEmoji} ${color.name.toUpperCase()} token created at element: ${elementId} (${this.tokens.get(elementId).length} total)`);
+        console.log(`    Token position: cx=${token.getAttribute('cx')}, cy=${token.getAttribute('cy')}, r=${token.getAttribute('r')}`);
+        console.log(`    Token visible in DOM:`, token.parentElement !== null);
+        return token;
+    }
+
+    getColorEmoji(colorName) {
+        const emojiMap = {
+            'blue': '🔵',
+            'red': '🔴',
+            'green': '🟢',
+            'orange': '🟠',
+            'purple': '🟣',
+            'teal': '🔵',
+            'pink': '🩷',
+            'amber': '🟡'
+        };
+        return emojiMap[colorName] || '⚪';
+    }
+
+    moveToken(fromElementId, toElementId, specificToken = null, onComplete = null) {
+        const fromElement = document.querySelector(`[data-id="${fromElementId}"]`);
+        const toElement = document.querySelector(`[data-id="${toElementId}"]`);
+
+        if (!fromElement || !toElement) {
+            console.warn(`Cannot move token: element not found (from: ${fromElementId}, to: ${toElementId})`);
+            if (onComplete) onComplete();
+            return;
+        }
+
+        // Get positions
+        const fromPos = this.getElementPosition(fromElement);
+        const toPos = this.getElementPosition(toElement);
+
+        // Get token to move
+        let token = specificToken;
+        if (!token) {
+            const tokensAtElement = this.tokens.get(fromElementId);
+            if (!tokensAtElement || tokensAtElement.length === 0) {
+                token = this.createToken(fromElementId);
+            } else {
+                // Take the first token from the array
+                token = tokensAtElement[0];
+            }
+        }
+
+        if (!token) {
+            if (onComplete) onComplete();
+            return;
+        }
+
+        console.log(`🔵 Moving token from ${fromElementId} to ${toElementId}`);
+
+        // Animate token movement
+        const duration = 800; // ms
+        const startTime = Date.now();
+
+        const animate = () => {
+            const elapsed = Date.now() - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+
+            // Easing function (ease-in-out)
+            const eased = progress < 0.5
+                ? 2 * progress * progress
+                : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+
+            // Interpolate position
+            const x = fromPos.x + (toPos.x - fromPos.x) * eased;
+            const y = fromPos.y + (toPos.y - fromPos.y) * eased;
+
+            token.setAttribute('cx', x);
+            token.setAttribute('cy', y);
+
+            if (progress < 1) {
+                requestAnimationFrame(animate);
+            } else {
+                // Animation complete - update token association
+                // Remove from source
+                const fromTokens = this.tokens.get(fromElementId);
+                if (fromTokens) {
+                    const index = fromTokens.indexOf(token);
+                    if (index > -1) {
+                        fromTokens.splice(index, 1);
+                    }
+                    if (fromTokens.length === 0) {
+                        this.tokens.delete(fromElementId);
+                    }
+                }
+
+                // Add to destination
+                if (!this.tokens.has(toElementId)) {
+                    this.tokens.set(toElementId, []);
+                }
+                this.tokens.get(toElementId).push(token);
+
+                console.log(`🔵 Token arrived at ${toElementId}`);
+                if (onComplete) onComplete();
+            }
+        };
+
+        requestAnimationFrame(animate);
+    }
+
+    removeToken(elementId, specificToken = null) {
+        const tokensAtElement = this.tokens.get(elementId);
+        if (!tokensAtElement || tokensAtElement.length === 0) return;
+
+        if (specificToken) {
+            // Remove specific token
+            const index = tokensAtElement.indexOf(specificToken);
+            if (index > -1) {
+                tokensAtElement.splice(index, 1);
+                specificToken.style.transition = 'opacity 0.3s';
+                specificToken.setAttribute('opacity', '0');
+                setTimeout(() => {
+                    specificToken.remove();
+                    console.log(`🔵 Token removed from ${elementId} (${tokensAtElement.length} remaining)`);
+                }, 300);
+            }
+            if (tokensAtElement.length === 0) {
+                this.tokens.delete(elementId);
+            }
+        } else {
+            // Remove all tokens at this element
+            tokensAtElement.forEach(token => {
+                token.style.transition = 'opacity 0.3s';
+                token.setAttribute('opacity', '0');
+                setTimeout(() => {
+                    token.remove();
+                }, 300);
+            });
+            this.tokens.delete(elementId);
+            console.log(`🔵 All tokens removed from ${elementId}`);
+        }
+    }
+
+    removeAllTokens() {
+        this.tokens.forEach((tokensArray, elementId) => {
+            tokensArray.forEach(token => {
+                token.remove();
+            });
+        });
+        this.tokens.clear();
+
+        // Also remove the tokensLayer container itself so it's recreated fresh on next execution
+        const tokensLayer = document.getElementById('tokensLayer');
+        if (tokensLayer) {
+            tokensLayer.remove();
+            console.log('🔵 All tokens removed and tokensLayer cleared');
+        } else {
+            console.log('🔵 All tokens removed');
+        }
+    }
+
+    getElementPosition(element) {
+        const transform = element.getAttribute('transform');
+        let x = 0, y = 0;
+        if (transform) {
+            const match = transform.match(/translate\(([^,]+),\s*([^)]+)\)/);
+            if (match) {
+                x = parseFloat(match[1]);
+                y = parseFloat(match[2]);
+            }
+        }
+        return { x, y };
+    }
+
+    // ===== ELEMENT HIGHLIGHTING =====
+
     highlightElement(elementId) {
+        console.log(`🔵 highlightElement called for: ${elementId}`);
+
         // Remove previous highlights
         document.querySelectorAll('.bpmn-element.active').forEach(el => {
             el.classList.remove('active');
@@ -393,10 +662,29 @@ class AGUIClient {
         // Highlight current element
         const element = document.querySelector(`[data-id="${elementId}"]`);
         if (element) {
+            console.log(`  ✅ Found element in DOM: ${elementId}`);
             element.classList.add('active');
 
             // Scroll into view
             element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        } else {
+            // Element not found in DOM - likely a subprocess internal element
+            console.log(`  ℹ️ Element ${elementId} not in DOM (likely subprocess internal element - skipping token)`);
+            return; // Don't try to create token for elements that aren't rendered
+        }
+
+        // Create token at this element if it doesn't exist
+        const tokensAtElement = this.tokens.get(elementId);
+        if (!tokensAtElement || tokensAtElement.length === 0) {
+            console.log(`  🎯 Creating token for ${elementId} (no existing tokens)`);
+            const token = this.createToken(elementId);
+            if (token) {
+                console.log(`  ✅ Token created successfully`);
+            } else {
+                console.warn(`  ❌ Token creation FAILED`);
+            }
+        } else {
+            console.log(`  ℹ️ Element already has ${tokensAtElement.length} token(s), not creating new one`);
         }
     }
 
@@ -424,6 +712,14 @@ class AGUIClient {
                 checkmark.textContent = '✓';
                 element.appendChild(checkmark);
             }
+
+            // Find next element(s) and move token
+            this.moveTokenToNextElements(elementId);
+        } else {
+            // Element not in DOM (subprocess internal element)
+            console.log(`  ℹ️ Element ${elementId} not in DOM (subprocess internal - skipping completion mark)`);
+            // Still try to move tokens in case this is a valid element
+            this.moveTokenToNextElements(elementId);
         }
 
         // Remove cancel button from feedback panel since task has completed
@@ -431,6 +727,274 @@ class AGUIClient {
 
         // Mark task as no longer cancellable
         this.cancellableTasks.delete(elementId);
+    }
+
+    moveTokenToNextElements(elementId) {
+        // Find outgoing connections from this element
+        if (typeof modeler !== 'undefined' && modeler.connections) {
+            const outgoingConnections = modeler.connections.filter(c => c.from === elementId);
+
+            if (outgoingConnections.length === 0) {
+                // End event - remove token
+                this.removeToken(elementId);
+            } else if (outgoingConnections.length === 1) {
+                // Single path - move token to next element
+                const nextElementId = outgoingConnections[0].to;
+
+                // Check if next element is a parallel gateway join
+                const nextElement = modeler.elements.find(e => e.id === nextElementId);
+                if (nextElement && nextElement.type === 'parallelGateway') {
+                    const incomingToNext = modeler.connections.filter(c => c.to === nextElementId);
+                    if (incomingToNext.length > 1) {
+                        // This is a join - handle synchronization
+                        this.handleParallelGatewayJoin(elementId, nextElementId, outgoingConnections[0]);
+                        return;
+                    }
+                }
+
+                // Normal move
+                this.moveToken(elementId, nextElementId);
+            } else {
+                // Multiple paths - check if this is a parallel gateway
+                const element = modeler.elements.find(e => e.id === elementId);
+
+                if (element && element.type === 'parallelGateway') {
+                    // Check if this is a join or fork by counting incoming connections
+                    const incomingConnections = modeler.connections.filter(c => c.to === elementId);
+
+                    if (incomingConnections.length > 1) {
+                        // This is a JOIN - tokens should have already merged
+                        // Just move the merged token forward
+                        this.moveToken(elementId, outgoingConnections[0].to);
+                    } else {
+                        // This is a FORK - create multiple tokens with different colors
+                        console.log(`🔵 Parallel gateway FORK ${elementId} - creating ${outgoingConnections.length} tokens`);
+
+                        const tokensAtElement = this.tokens.get(elementId);
+                        if (tokensAtElement && tokensAtElement.length > 0) {
+                            // Take one token and clone it for each outgoing path
+                            const sourceToken = tokensAtElement[0];
+
+                            outgoingConnections.forEach((conn, index) => {
+                                if (index === 0) {
+                                    // Keep the original token blue (color index 0)
+                                    this.moveToken(elementId, conn.to, sourceToken);
+                                } else {
+                                    // Create new tokens with different colors for each parallel path
+                                    const newToken = this.createToken(elementId, index, index);
+                                    if (newToken) {
+                                        this.moveToken(elementId, conn.to, newToken);
+                                    }
+                                }
+                            });
+                        }
+                    }
+                } else {
+                    // Exclusive or inclusive gateway - will be handled by gateway.path_taken event
+                    console.log(`🔵 Gateway ${elementId} has ${outgoingConnections.length} outgoing paths - waiting for gateway decision`);
+                }
+            }
+        }
+    }
+
+    handleParallelGatewayJoin(fromElementId, joinGatewayId, connection) {
+        // Initialize join tracking if not exists
+        if (!this.tokenJoinWaiting.has(joinGatewayId)) {
+            const incomingConnections = modeler.connections.filter(c => c.to === joinGatewayId);
+            this.tokenJoinWaiting.set(joinGatewayId, {
+                expected: incomingConnections.length,
+                arrived: [],
+                startTime: Date.now(),
+                timeoutId: null
+            });
+
+            // Start deadlock detection timer
+            const joinInfo = this.tokenJoinWaiting.get(joinGatewayId);
+            joinInfo.timeoutId = setTimeout(() => {
+                this.detectDeadlock(joinGatewayId);
+            }, this.deadlockTimeout);
+        }
+
+        const joinInfo = this.tokenJoinWaiting.get(joinGatewayId);
+        const arrivalIndex = joinInfo.arrived.length + 1;
+
+        console.log(`🔵 Token arriving at parallel gateway JOIN: ${joinGatewayId} from ${fromElementId} (arrival #${arrivalIndex})`);
+
+        // Move token to the join gateway
+        this.moveToken(fromElementId, joinGatewayId, null, () => {
+            // After token arrives, record it with timestamp
+            const tokensAtJoin = this.tokens.get(joinGatewayId);
+            if (tokensAtJoin && tokensAtJoin.length > 0) {
+                const arrivedToken = tokensAtJoin[tokensAtJoin.length - 1]; // The most recently arrived
+                const colorName = arrivedToken.getAttribute('data-token-color');
+                const emoji = this.getColorEmoji(colorName);
+
+                joinInfo.arrived.push({
+                    token: arrivedToken,
+                    timestamp: Date.now(),
+                    color: colorName,
+                    from: fromElementId
+                });
+
+                console.log(`${emoji} ${colorName.toUpperCase()} token arrived at JOIN (${joinInfo.arrived.length}/${joinInfo.expected})`);
+            }
+
+            // Check if all incoming tokens have arrived
+            this.checkParallelGatewayJoinComplete(joinGatewayId);
+        });
+    }
+
+    checkParallelGatewayJoinComplete(joinGatewayId) {
+        if (typeof modeler !== 'undefined' && modeler.connections) {
+            const joinInfo = this.tokenJoinWaiting.get(joinGatewayId);
+            if (!joinInfo) return;
+
+            const tokensAtJoin = this.tokens.get(joinGatewayId);
+            const tokenCount = tokensAtJoin ? tokensAtJoin.length : 0;
+
+            console.log(`🔵 Parallel gateway JOIN ${joinGatewayId}: ${tokenCount}/${joinInfo.expected} tokens arrived`);
+
+            if (tokenCount >= joinInfo.expected) {
+                // All tokens have arrived - show arrival order and merge
+                console.log(`✅ All tokens arrived at JOIN ${joinGatewayId} - merging`);
+                console.log('📊 Arrival order:');
+                joinInfo.arrived.forEach((arrival, index) => {
+                    const emoji = this.getColorEmoji(arrival.color);
+                    console.log(`  ${index + 1}. ${emoji} ${arrival.color.toUpperCase()} token (from ${arrival.from})`);
+                });
+
+                // Keep the first-arrived token, remove the rest
+                const firstToken = joinInfo.arrived[0].token;
+                const firstColor = joinInfo.arrived[0].color;
+                const firstEmoji = this.getColorEmoji(firstColor);
+
+                console.log(`🏆 Keeping ${firstEmoji} ${firstColor.toUpperCase()} token (arrived first), merging others`);
+
+                // Remove all tokens except the first one
+                tokensAtJoin.forEach(token => {
+                    if (token !== firstToken) {
+                        token.style.transition = 'opacity 0.3s';
+                        token.setAttribute('opacity', '0');
+                        setTimeout(() => {
+                            token.remove();
+                            const index = tokensAtJoin.indexOf(token);
+                            if (index > -1) {
+                                tokensAtJoin.splice(index, 1);
+                            }
+                        }, 300);
+                    }
+                });
+
+                // Clear deadlock timer
+                if (joinInfo.timeoutId) {
+                    clearTimeout(joinInfo.timeoutId);
+                }
+
+                // Clear join tracking
+                this.tokenJoinWaiting.delete(joinGatewayId);
+
+                // The join gateway will complete and trigger moveTokenToNextElements
+            }
+        }
+    }
+
+    detectDeadlock(joinGatewayId) {
+        const joinInfo = this.tokenJoinWaiting.get(joinGatewayId);
+        if (!joinInfo) return;
+
+        const waitTime = Date.now() - joinInfo.startTime;
+        const arrivedCount = joinInfo.arrived.length;
+        const expectedCount = joinInfo.expected;
+        const missingCount = expectedCount - arrivedCount;
+
+        console.error('');
+        console.error('🚨 ═══════════════════════════════════════════════════════');
+        console.error('🚨 DEADLOCK DETECTED!');
+        console.error('🚨 ═══════════════════════════════════════════════════════');
+        console.error(`Gateway: ${joinGatewayId}`);
+        console.error(`Wait time: ${(waitTime / 1000).toFixed(1)}s`);
+        console.error(`Tokens arrived: ${arrivedCount}/${expectedCount}`);
+        console.error(`Missing tokens: ${missingCount}`);
+        console.error('');
+
+        if (arrivedCount > 0) {
+            console.error('✅ Tokens that arrived:');
+            joinInfo.arrived.forEach((arrival, index) => {
+                const emoji = this.getColorEmoji(arrival.color);
+                const timeSinceArrival = Date.now() - arrival.timestamp;
+                console.error(`  ${index + 1}. ${emoji} ${arrival.color.toUpperCase()} token (from ${arrival.from}) - arrived ${(timeSinceArrival / 1000).toFixed(1)}s ago`);
+            });
+        }
+
+        console.error('');
+        console.error('❌ Missing token paths (never arrived):');
+        const incomingConnections = modeler.connections.filter(c => c.to === joinGatewayId);
+        const arrivedFromIds = new Set(joinInfo.arrived.map(a => a.from));
+        incomingConnections.forEach(conn => {
+            if (!arrivedFromIds.has(conn.from)) {
+                console.error(`  ⚠️  Path from ${conn.from} - token never arrived`);
+            }
+        });
+
+        console.error('');
+        console.error('💡 Possible causes:');
+        console.error('  • One or more parallel paths threw an exception');
+        console.error('  • A path diverted to error handling and never reached join');
+        console.error('  • A path contains an infinite loop or is still running');
+        console.error('  • Incorrect workflow design - unbalanced fork/join');
+        console.error('🚨 ═══════════════════════════════════════════════════════');
+        console.error('');
+
+        // Mark gateway as deadlocked visually
+        this.markGatewayAsDeadlocked(joinGatewayId, joinInfo);
+
+        // Show notification
+        this.showNotification(
+            '⚠️ Deadlock Detected',
+            `Gateway ${joinGatewayId} is waiting for ${missingCount} more token(s) but they will never arrive. Check console for details.`,
+            'error'
+        );
+    }
+
+    markGatewayAsDeadlocked(joinGatewayId, joinInfo) {
+        const gateway = document.querySelector(`[data-id="${joinGatewayId}"]`);
+        if (!gateway) return;
+
+        // Add deadlock class
+        gateway.classList.add('deadlocked');
+
+        // Add pulsing red border
+        const diamond = gateway.querySelector('rect');
+        if (diamond) {
+            diamond.setAttribute('stroke', '#e74c3c');
+            diamond.setAttribute('stroke-width', '4');
+            diamond.style.animation = 'deadlockPulse 1s ease-in-out infinite';
+        }
+
+        // Add warning icon
+        const warningIcon = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        warningIcon.setAttribute('class', 'deadlock-warning');
+        warningIcon.setAttribute('x', '0');
+        warningIcon.setAttribute('y', '-30');
+        warningIcon.setAttribute('font-size', '24');
+        warningIcon.setAttribute('fill', '#e74c3c');
+        warningIcon.setAttribute('text-anchor', 'middle');
+        warningIcon.textContent = '⚠️';
+        gateway.appendChild(warningIcon);
+
+        // Add status text
+        const statusText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        statusText.setAttribute('class', 'deadlock-status');
+        statusText.setAttribute('x', '0');
+        statusText.setAttribute('y', '40');
+        statusText.setAttribute('font-size', '10');
+        statusText.setAttribute('fill', '#e74c3c');
+        statusText.setAttribute('text-anchor', 'middle');
+        statusText.setAttribute('font-weight', 'bold');
+        statusText.textContent = `DEADLOCK (${joinInfo.arrived.length}/${joinInfo.expected})`;
+        gateway.appendChild(statusText);
+
+        console.log(`🚨 Gateway ${joinGatewayId} marked as DEADLOCKED`);
     }
 
     removeCancelButton(elementId) {
@@ -784,6 +1348,15 @@ class AGUIClient {
                 }
             }
 
+            // Move token along the chosen path
+            if (typeof modeler !== 'undefined' && modeler.connections) {
+                const connection = modeler.connections.find(c => c.id === flowId);
+                if (connection) {
+                    console.log(`🔵 Gateway chose path: ${flowId} from ${connection.from} to ${connection.to}`);
+                    this.moveToken(connection.from, connection.to);
+                }
+            }
+
             // Mark all other outgoing flows from this gateway as NOT taken
             if (gatewayId) {
                 const allFlows = document.querySelectorAll(`line[data-id]`);
@@ -1007,6 +1580,9 @@ class AGUIClient {
 
         // Remove all path indicators (checkmarks and X marks)
         document.querySelectorAll('.path-indicator').forEach(indicator => indicator.remove());
+
+        // Remove all tokens
+        this.removeAllTokens();
 
         // Clear all feedback panels
         document.querySelectorAll('.task-feedback-panel').forEach(panel => panel.remove());

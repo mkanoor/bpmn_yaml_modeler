@@ -1,0 +1,4 @@
+{
+  "comment": "Minimal context - script tasks will create the data structures",
+  "note": "You can also just use an empty object: {}"
+}

@@ -4,9 +4,13 @@ class BPMNModeler {
         this.elements = [];
         this.connections = [];
         this.pools = [];
+        this.subProcessDefinitions = []; // Reusable subprocess definitions
+        this.workflowName = 'BPMN Process'; // Workflow name
         this.selectedElement = null;
         this.connectionMode = false;
         this.connectionStart = null;
+        this.boundaryEventMode = false;  // For attaching boundary events
+        this.boundaryEventType = null;   // Type of boundary event being attached
         this.draggedElement = null;
         this.zoom = 1;
         this.panX = 0;
@@ -14,6 +18,10 @@ class BPMNModeler {
         this.isPanning = false;
         this.panStart = { x: 0, y: 0 };
         this.idCounter = 0;
+
+        // Subprocess editor state
+        this.editingSubProcess = null; // Currently editing subprocess definition
+        this.isSubProcessEditorMode = false;
 
         // Undo/Redo state management
         this.undoStack = [];
@@ -57,6 +65,10 @@ class BPMNModeler {
         document.getElementById('resetZoomBtn').addEventListener('click', () => this.resetView());
         document.getElementById('fitToViewBtn').addEventListener('click', () => this.fitToView());
         document.getElementById('deleteBtn').addEventListener('click', () => this.deleteSelected());
+
+        // Subprocess definition controls
+        document.getElementById('addSubProcessDefBtn').addEventListener('click', () => this.createSubProcessDefinition());
+        document.getElementById('exitSubprocessEditorBtn').addEventListener('click', () => this.exitSubProcessEditor());
 
         // Canvas events
         this.canvas.addEventListener('click', (e) => this.handleCanvasClick(e));
@@ -109,6 +121,9 @@ class BPMNModeler {
                     this.enterConnectionMode();
                 } else if (type === 'pool') {
                     this.addPool();
+                } else if (this.isBoundaryEventType(type)) {
+                    // Boundary events need to attach to tasks
+                    this.enterBoundaryEventMode(type);
                 } else {
                     // For other elements, we'll add them to the center of the canvas
                     this.addElement(type, 400, 300);
@@ -173,6 +188,124 @@ class BPMNModeler {
         return lines.length;
     }
 
+    // Helper: Check if type is a boundary event
+    isBoundaryEventType(type) {
+        const boundaryTypes = [
+            'errorBoundaryEvent',
+            'timerBoundaryEvent',
+            'escalationBoundaryEvent',
+            'signalBoundaryEvent'
+        ];
+        return boundaryTypes.includes(type);
+    }
+
+    // Helper: Check if element is a task (can have boundary events)
+    isTaskElement(elementOrId) {
+        let element;
+        if (typeof elementOrId === 'string') {
+            element = this.elements.find(e => e.id === elementOrId);
+        } else {
+            const id = elementOrId.getAttribute('data-id');
+            element = this.elements.find(e => e.id === id);
+        }
+
+        if (!element) return false;
+
+        const taskTypes = [
+            'task', 'userTask', 'serviceTask', 'scriptTask',
+            'sendTask', 'receiveTask', 'manualTask',
+            'businessRuleTask', 'agenticTask', 'subProcess', 'callActivity'
+        ];
+
+        return taskTypes.includes(element.type);
+    }
+
+    // Boundary event attachment mode
+    enterBoundaryEventMode(type) {
+        this.boundaryEventMode = true;
+        this.boundaryEventType = type;
+        this.canvas.style.cursor = 'crosshair';
+
+        console.log(`🎯 Boundary Event Mode: Click on a task to attach ${type}`);
+
+        // Show helper message
+        const message = document.createElement('div');
+        message.id = 'boundaryEventHint';
+        message.style.cssText = `
+            position: fixed;
+            top: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #9b59b6;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 4px;
+            z-index: 1000;
+            font-size: 14px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        `;
+        message.textContent = `Click on a task to attach ${this.getDefaultName(type)}`;
+        document.body.appendChild(message);
+    }
+
+    exitBoundaryEventMode() {
+        this.boundaryEventMode = false;
+        this.boundaryEventType = null;
+        this.canvas.style.cursor = 'default';
+
+        // Remove hint message
+        const hint = document.getElementById('boundaryEventHint');
+        if (hint) hint.remove();
+    }
+
+    calculateBoundaryPosition(task, boundaryType) {
+        // Position boundary events on task border
+        // Error - bottom left
+        // Timer - top right
+        // Escalation - top left
+        // Signal - bottom right
+
+        const positions = {
+            errorBoundaryEvent: { offsetX: -45, offsetY: 25 },
+            timerBoundaryEvent: { offsetX: 45, offsetY: -25 },
+            escalationBoundaryEvent: { offsetX: -45, offsetY: -25 },
+            signalBoundaryEvent: { offsetX: 45, offsetY: 25 }
+        };
+
+        const offset = positions[boundaryType] || { offsetX: 0, offsetY: 0 };
+
+        return {
+            x: task.x + offset.offsetX,
+            y: task.y + offset.offsetY
+        };
+    }
+
+    attachBoundaryEvent(taskId) {
+        const task = this.elements.find(e => e.id === taskId);
+        if (!task) {
+            console.error(`❌ Task not found: ${taskId}`);
+            return;
+        }
+
+        // Calculate position on task boundary
+        const position = this.calculateBoundaryPosition(task, this.boundaryEventType);
+
+        // Create boundary event attached to task
+        const boundaryEvent = this.addElement(
+            this.boundaryEventType,
+            position.x,
+            position.y,
+            task.poolId,
+            task.laneId,
+            taskId  // attachedToRef
+        );
+
+        console.log(`✅ Attached ${this.boundaryEventType} to task ${task.name}`);
+
+        this.exitBoundaryEventMode();
+        this.selectElement(boundaryEvent);
+    }
+
     generateId() {
         return `element_${++this.idCounter}`;
     }
@@ -202,7 +335,7 @@ class BPMNModeler {
         this.saveState(); // Save state for undo
     }
 
-    addElement(type, x, y, poolId = null, laneId = null) {
+    addElement(type, x, y, poolId = null, laneId = null, attachedToRef = null) {
         const id = this.generateId();
         const element = {
             id,
@@ -212,6 +345,7 @@ class BPMNModeler {
             y,
             poolId,
             laneId,
+            attachedToRef,  // For boundary events - references parent task
             properties: {},
             expanded: type === 'subProcess' ? false : undefined, // Track collapse state
             childElements: type === 'subProcess' ? [] : undefined, // Nested elements
@@ -219,6 +353,17 @@ class BPMNModeler {
             width: type === 'subProcess' ? 300 : undefined, // Expanded width
             height: type === 'subProcess' ? 200 : undefined // Expanded height
         };
+
+        // Add boundary event specific properties
+        if (this.isBoundaryEventType(type)) {
+            element.properties.cancelActivity = true;  // Interrupting by default
+            if (type === 'timerBoundaryEvent') {
+                element.properties.timerDuration = 'PT30S';  // Default 30 seconds
+            }
+            if (type === 'errorBoundaryEvent') {
+                element.properties.errorCode = '';  // Catch all errors by default
+            }
+        }
 
         this.elements.push(element);
         this.renderElement(element);
@@ -246,7 +391,11 @@ class BPMNModeler {
             callActivity: 'Call Activity',
             exclusiveGateway: 'Exclusive Gateway',
             parallelGateway: 'Parallel Gateway',
-            inclusiveGateway: 'Inclusive Gateway'
+            inclusiveGateway: 'Inclusive Gateway',
+            errorBoundaryEvent: 'Catch Error',
+            timerBoundaryEvent: '30s Timeout',
+            escalationBoundaryEvent: 'Escalate',
+            signalBoundaryEvent: 'Catch Signal'
         };
         return names[type] || type;
     }
@@ -492,12 +641,43 @@ class BPMNModeler {
                 bClockMinute.setAttribute('stroke-width', 1);
                 g.appendChild(bClockMinute);
 
-                const boundText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-                boundText.setAttribute('y', 28);
-                boundText.setAttribute('class', 'element-text');
-                boundText.setAttribute('font-size', '10');
-                boundText.textContent = element.name;
-                g.appendChild(boundText);
+                // No text label - boundary events are icon-only
+                break;
+
+            case 'errorBoundaryEvent':
+            case 'timerBoundaryEvent':
+            case 'escalationBoundaryEvent':
+            case 'signalBoundaryEvent':
+                // Get color for this boundary event type
+                const beColor = this.getBoundaryEventColor(element.type);
+
+                // Dashed outer circle
+                const beOuterCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                beOuterCircle.setAttribute('cx', 0);
+                beOuterCircle.setAttribute('cy', 0);
+                beOuterCircle.setAttribute('r', 15);
+                beOuterCircle.setAttribute('fill', 'white');
+                beOuterCircle.setAttribute('stroke', beColor);
+                beOuterCircle.setAttribute('stroke-width', 2);
+                beOuterCircle.setAttribute('stroke-dasharray', '3,2');
+                g.appendChild(beOuterCircle);
+
+                // Inner circle
+                const beInnerCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                beInnerCircle.setAttribute('cx', 0);
+                beInnerCircle.setAttribute('cy', 0);
+                beInnerCircle.setAttribute('r', 12);
+                beInnerCircle.setAttribute('fill', 'none');
+                beInnerCircle.setAttribute('stroke', beColor);
+                beInnerCircle.setAttribute('stroke-width', 1.5);
+                g.appendChild(beInnerCircle);
+
+                // Add icon specific to event type
+                const beIcon = this.createBoundaryEventIcon(element.type);
+                g.appendChild(beIcon);
+
+                // No text label - boundary events are icon-only for clean appearance
+                // Click the boundary event to see its name and properties in the panel
                 break;
 
             case 'task':
@@ -524,8 +704,10 @@ class BPMNModeler {
                 taskRect.setAttribute('width', width);
                 taskRect.setAttribute('height', height);
                 taskRect.setAttribute('rx', 5);
-                taskRect.setAttribute('class', 'bpmn-task');
-                taskRect.setAttribute('stroke-width', element.type === 'callActivity' ? 4 : 2);
+
+                // Add appropriate CSS class
+                const taskClass = element.type === 'callActivity' ? 'bpmn-task call-activity' : 'bpmn-task';
+                taskRect.setAttribute('class', taskClass);
 
                 // Add light background for expanded subprocesses
                 if (isExpanded) {
@@ -857,22 +1039,105 @@ class BPMNModeler {
         return g;
     }
 
+    getBoundaryEventColor(type) {
+        const colors = {
+            errorBoundaryEvent: '#e74c3c',
+            timerBoundaryEvent: '#f39c12',
+            escalationBoundaryEvent: '#9b59b6',
+            signalBoundaryEvent: '#3498db'
+        };
+        return colors[type] || '#2c3e50';
+    }
+
+    createBoundaryEventIcon(type) {
+        const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        const color = this.getBoundaryEventColor(type);
+
+        if (type === 'errorBoundaryEvent') {
+            // Lightning bolt
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            path.setAttribute('d', 'M 2 -7 L -3 0 L 0 0 L -2 7 L 3 0 L 0 0 Z');
+            path.setAttribute('fill', color);
+            g.appendChild(path);
+        } else if (type === 'timerBoundaryEvent') {
+            // Clock icon
+            const clockCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            clockCircle.setAttribute('cx', 0);
+            clockCircle.setAttribute('cy', 0);
+            clockCircle.setAttribute('r', 8);
+            clockCircle.setAttribute('fill', 'none');
+            clockCircle.setAttribute('stroke', color);
+            clockCircle.setAttribute('stroke-width', 1);
+            g.appendChild(clockCircle);
+
+            const clockHour = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            clockHour.setAttribute('x1', 0);
+            clockHour.setAttribute('y1', 0);
+            clockHour.setAttribute('x2', 0);
+            clockHour.setAttribute('y2', -4);
+            clockHour.setAttribute('stroke', color);
+            clockHour.setAttribute('stroke-width', 1);
+            g.appendChild(clockHour);
+
+            const clockMinute = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            clockMinute.setAttribute('x1', 0);
+            clockMinute.setAttribute('y1', 0);
+            clockMinute.setAttribute('x2', 4);
+            clockMinute.setAttribute('y2', 0);
+            clockMinute.setAttribute('stroke', color);
+            clockMinute.setAttribute('stroke-width', 1);
+            g.appendChild(clockMinute);
+        } else if (type === 'escalationBoundaryEvent') {
+            // Up arrow
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            path.setAttribute('d', 'M 0 -5 L -4 1 L -1.5 1 L -1.5 5 L 1.5 5 L 1.5 1 L 4 1 Z');
+            path.setAttribute('fill', color);
+            g.appendChild(path);
+        } else if (type === 'signalBoundaryEvent') {
+            // Triangle
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            path.setAttribute('d', 'M 0 -5 L 5 4 L -5 4 Z');
+            path.setAttribute('fill', 'none');
+            path.setAttribute('stroke', color);
+            path.setAttribute('stroke-width', 1.5);
+            g.appendChild(path);
+        }
+
+        return g;
+    }
+
     getConnectionPoints(element) {
         const points = [];
 
         if (element.type.includes('Event')) {
-            points.push({ x: 20, y: 0 }); // right
-            points.push({ x: -20, y: 0 }); // left
-            points.push({ x: 0, y: -20 }); // top
-            points.push({ x: 0, y: 20 }); // bottom
+            // Boundary events are smaller (r=15), regular events are larger (r=20)
+            const isBoundaryEvent = this.isBoundaryEventType(element.type);
+            const radius = isBoundaryEvent ? 15 : 20;
+
+            points.push({ x: radius, y: 0 }); // right
+            points.push({ x: -radius, y: 0 }); // left
+            points.push({ x: 0, y: -radius }); // top
+            points.push({ x: 0, y: radius }); // bottom
         } else if (element.type === 'task' || element.type === 'userTask' || element.type === 'serviceTask' ||
                    element.type === 'scriptTask' || element.type === 'sendTask' || element.type === 'receiveTask' ||
                    element.type === 'manualTask' || element.type === 'businessRuleTask' || element.type === 'agenticTask' ||
-                   element.type === 'subProcess' || element.type === 'callActivity') {
+                   element.type === 'callActivity') {
             points.push({ x: 60, y: 0 }); // right (increased from 50 to 60)
             points.push({ x: -60, y: 0 }); // left (increased from 50 to 60)
             points.push({ x: 0, y: -40 }); // top (increased from 30 to 40)
             points.push({ x: 0, y: 40 }); // bottom (increased from 30 to 40)
+        } else if (element.type === 'subProcess') {
+            // For expanded subprocesses, use the boundary dimensions
+            const isExpanded = element.expanded;
+            const width = isExpanded ? element.width : 120;
+            const height = isExpanded ? element.height : 80;
+            const halfWidth = width / 2;
+            const halfHeight = height / 2;
+
+            points.push({ x: halfWidth, y: 0 }); // right boundary
+            points.push({ x: -halfWidth, y: 0 }); // left boundary
+            points.push({ x: 0, y: -halfHeight }); // top boundary
+            points.push({ x: 0, y: halfHeight }); // bottom boundary
         } else if (element.type.includes('Gateway')) {
             points.push({ x: 25, y: 0 }); // right
             points.push({ x: -25, y: 0 }); // left
@@ -965,6 +1230,22 @@ class BPMNModeler {
     makeElementSelectable(svgElement, element) {
         svgElement.addEventListener('click', (e) => {
             if (e.target.classList.contains('connection-point')) return;
+
+            // If in boundary event mode, handle attachment instead of selection
+            if (this.boundaryEventMode) {
+                console.log('🎯 Element clicked in boundary event mode:', element.id, element.type);
+                if (this.isTaskElement(element.id)) {
+                    console.log('   ✅ Element is a task - attaching boundary event');
+                    e.stopPropagation(); // Stop propagation only after we handle it
+                    this.attachBoundaryEvent(element.id);
+                } else {
+                    console.log('   ❌ Element is not a task - cancelling mode');
+                    this.exitBoundaryEventMode();
+                }
+                return;
+            }
+
+            // Normal selection mode
             e.stopPropagation();
             this.selectElement(element);
         });
@@ -1091,6 +1372,108 @@ class BPMNModeler {
             this.propertiesContent.appendChild(createSelect('Task Type', element.type, 'type', typeOptions));
         } else {
             this.propertiesContent.appendChild(createInput('Type', element.type, 'type'));
+        }
+
+        // Boundary event specific properties
+        if (element.attachedToRef) {
+            const attachedTask = this.elements.find(e => e.id === element.attachedToRef);
+            const taskName = attachedTask ? attachedTask.name : element.attachedToRef;
+
+            const attachedGroup = document.createElement('div');
+            attachedGroup.className = 'property-group';
+            const attachedLabel = document.createElement('label');
+            attachedLabel.textContent = 'Attached To:';
+            attachedGroup.appendChild(attachedLabel);
+
+            const attachedDiv = document.createElement('div');
+            attachedDiv.style.cssText = 'padding: 0.5rem; background: #f0f0f0; border-radius: 4px; margin-top: 0.25rem;';
+            attachedDiv.textContent = `📎 ${taskName}`;
+            attachedGroup.appendChild(attachedDiv);
+            this.propertiesContent.appendChild(attachedGroup);
+        }
+
+        // Timer duration for timer boundary events
+        if (element.type === 'timerBoundaryEvent') {
+            const timerGroup = document.createElement('div');
+            timerGroup.className = 'property-group';
+            const timerLabel = document.createElement('label');
+            timerLabel.textContent = 'Timer Duration (ISO 8601):';
+            timerGroup.appendChild(timerLabel);
+
+            const timerInput = document.createElement('input');
+            timerInput.type = 'text';
+            timerInput.value = element.properties?.timerDuration || 'PT30S';
+            timerInput.placeholder = 'PT30S';
+            timerInput.addEventListener('input', (e) => {
+                if (!element.properties) element.properties = {};
+                element.properties.timerDuration = e.target.value;
+            });
+            timerGroup.appendChild(timerInput);
+
+            const timerHelp = document.createElement('small');
+            timerHelp.style.cssText = 'display: block; margin-top: 0.25rem; color: #6c757d; font-size: 0.85rem;';
+            timerHelp.textContent = 'Examples: PT30S (30s), PT5M (5min), PT1H (1hr), P1D (1 day)';
+            timerGroup.appendChild(timerHelp);
+
+            this.propertiesContent.appendChild(timerGroup);
+        }
+
+        // Error code for error boundary events
+        if (element.type === 'errorBoundaryEvent') {
+            const errorGroup = document.createElement('div');
+            errorGroup.className = 'property-group';
+            const errorLabel = document.createElement('label');
+            errorLabel.textContent = 'Error Code (empty = catch all):';
+            errorGroup.appendChild(errorLabel);
+
+            const errorInput = document.createElement('input');
+            errorInput.type = 'text';
+            errorInput.value = element.properties?.errorCode || '';
+            errorInput.placeholder = 'Leave empty to catch all errors';
+            errorInput.addEventListener('input', (e) => {
+                if (!element.properties) element.properties = {};
+                element.properties.errorCode = e.target.value;
+            });
+            errorGroup.appendChild(errorInput);
+
+            const errorHelp = document.createElement('small');
+            errorHelp.style.cssText = 'display: block; margin-top: 0.25rem; color: #6c757d; font-size: 0.85rem;';
+            errorHelp.textContent = 'Examples: ValidationError, ZeroDivisionError, or empty for all errors';
+            errorGroup.appendChild(errorHelp);
+
+            this.propertiesContent.appendChild(errorGroup);
+        }
+
+        // Cancel activity checkbox for all boundary events
+        if (this.isBoundaryEventType(element.type)) {
+            const cancelGroup = document.createElement('div');
+            cancelGroup.className = 'property-group';
+
+            const cancelLabel = document.createElement('label');
+            cancelLabel.style.cssText = 'display: flex; align-items: center; cursor: pointer;';
+
+            const cancelCheckbox = document.createElement('input');
+            cancelCheckbox.type = 'checkbox';
+            cancelCheckbox.checked = element.properties?.cancelActivity !== false; // Default true
+            cancelCheckbox.addEventListener('change', (e) => {
+                if (!element.properties) element.properties = {};
+                element.properties.cancelActivity = e.target.checked;
+            });
+            cancelLabel.appendChild(cancelCheckbox);
+
+            const cancelText = document.createElement('span');
+            cancelText.style.marginLeft = '0.5rem';
+            cancelText.textContent = 'Interrupting (cancel task on trigger)';
+            cancelLabel.appendChild(cancelText);
+
+            cancelGroup.appendChild(cancelLabel);
+
+            const cancelHelp = document.createElement('small');
+            cancelHelp.style.cssText = 'display: block; margin-top: 0.25rem; color: #6c757d; font-size: 0.85rem;';
+            cancelHelp.textContent = 'Unchecked = non-interrupting (task continues after boundary event triggers)';
+            cancelGroup.appendChild(cancelHelp);
+
+            this.propertiesContent.appendChild(cancelGroup);
         }
 
         if (element.type !== 'pool') {
@@ -1297,9 +1680,13 @@ class BPMNModeler {
                   helpText: 'Select which AG-UI event categories to send to UI' }
             ],
             callActivity: [
-                { key: 'calledElement', label: 'Called Process', type: 'text', placeholder: 'subprocess-id' },
-                { key: 'calledElementBinding', label: 'Binding', type: 'select', options: ['latest', 'deployment', 'version'] },
-                { key: 'inheritVariables', label: 'Inherit Variables', type: 'checkbox' },
+                { key: 'calledElement', label: 'Subprocess Definition', type: 'subprocess-select' },
+                { key: 'inheritVariables', label: 'Inherit All Variables', type: 'checkbox', defaultValue: true,
+                  helpText: 'Pass all parent process variables to subprocess automatically' },
+                { key: 'inputMappings', label: 'Input Mappings', type: 'variable-mappings',
+                  helpText: 'Map specific variables from parent process to subprocess (e.g., processData → taskDetails)' },
+                { key: 'outputMappings', label: 'Output Mappings', type: 'variable-mappings',
+                  helpText: 'Map subprocess output variables back to parent process (e.g., decision → approvalResult)' },
                 { key: 'async', label: 'Asynchronous', type: 'checkbox' }
             ],
             timerIntermediateCatchEvent: [
@@ -1395,6 +1782,105 @@ class BPMNModeler {
                     if (element.properties[field.key] === opt) option.selected = true;
                     input.appendChild(option);
                 });
+            } else if (field.type === 'subprocess-select') {
+                // Special dropdown for subprocess definitions
+                input = document.createElement('select');
+                const emptyOption = document.createElement('option');
+                emptyOption.value = '';
+                emptyOption.textContent = this.subProcessDefinitions.length === 0 ? '-- No subprocesses defined --' : '-- Select Subprocess --';
+                input.appendChild(emptyOption);
+
+                this.subProcessDefinitions.forEach(def => {
+                    const option = document.createElement('option');
+                    option.value = def.id;
+                    option.textContent = def.name;
+                    if (element.properties[field.key] === def.id) option.selected = true;
+                    input.appendChild(option);
+                });
+
+                // Add link to create new subprocess
+                if (this.subProcessDefinitions.length === 0) {
+                    const hint = document.createElement('p');
+                    hint.className = 'property-hint';
+                    hint.style.fontSize = '0.85rem';
+                    hint.style.color = '#999';
+                    hint.style.marginTop = '0.3rem';
+                    hint.innerHTML = 'Create subprocess definitions using the 📚 panel on the left';
+                    propertyGroup.appendChild(hint);
+                }
+            } else if (field.type === 'variable-mappings') {
+                // Variable mappings UI - key-value pairs
+                input = document.createElement('div');
+                input.className = 'variable-mappings-container';
+                input.style.cssText = 'border: 1px solid #dee2e6; border-radius: 4px; padding: 0.5rem; background: #f8f9fa;';
+
+                // Get existing mappings or create empty array
+                const mappings = element.properties[field.key] || [];
+
+                // Render existing mappings
+                const renderMappings = () => {
+                    input.innerHTML = '';
+
+                    mappings.forEach((mapping, index) => {
+                        const row = document.createElement('div');
+                        row.style.cssText = 'display: flex; gap: 0.5rem; margin-bottom: 0.5rem; align-items: center;';
+
+                        const sourceInput = document.createElement('input');
+                        sourceInput.type = 'text';
+                        sourceInput.value = mapping.source || '';
+                        sourceInput.placeholder = 'Source variable';
+                        sourceInput.style.flex = '1';
+                        sourceInput.addEventListener('input', (e) => {
+                            mappings[index].source = e.target.value;
+                            element.properties[field.key] = mappings;
+                        });
+
+                        const arrow = document.createElement('span');
+                        arrow.textContent = '→';
+                        arrow.style.cssText = 'font-weight: bold; color: #666;';
+
+                        const targetInput = document.createElement('input');
+                        targetInput.type = 'text';
+                        targetInput.value = mapping.target || '';
+                        targetInput.placeholder = 'Target variable';
+                        targetInput.style.flex = '1';
+                        targetInput.addEventListener('input', (e) => {
+                            mappings[index].target = e.target.value;
+                            element.properties[field.key] = mappings;
+                        });
+
+                        const removeBtn = document.createElement('button');
+                        removeBtn.textContent = '✕';
+                        removeBtn.className = 'btn-icon danger';
+                        removeBtn.style.cssText = 'padding: 0.2rem 0.4rem; font-size: 0.9rem;';
+                        removeBtn.addEventListener('click', () => {
+                            mappings.splice(index, 1);
+                            element.properties[field.key] = mappings;
+                            renderMappings();
+                        });
+
+                        row.appendChild(sourceInput);
+                        row.appendChild(arrow);
+                        row.appendChild(targetInput);
+                        row.appendChild(removeBtn);
+                        input.appendChild(row);
+                    });
+
+                    // Add mapping button
+                    const addBtn = document.createElement('button');
+                    addBtn.textContent = '+ Add Mapping';
+                    addBtn.className = 'btn-icon';
+                    addBtn.style.cssText = 'width: 100%; margin-top: 0.3rem; padding: 0.3rem;';
+                    addBtn.addEventListener('click', () => {
+                        mappings.push({ source: '', target: '' });
+                        element.properties[field.key] = mappings;
+                        renderMappings();
+                    });
+                    input.appendChild(addBtn);
+                };
+
+                renderMappings();
+                element.properties[field.key] = mappings; // Initialize if not exists
             } else if (field.type === 'textarea') {
                 input = document.createElement('textarea');
                 input.value = element.properties[field.key] || '';
@@ -2114,6 +2600,45 @@ Your tasks:
     }
 
     handleCanvasClick(e) {
+        // Handle boundary event attachment mode
+        if (this.boundaryEventMode) {
+            console.log('🎯 Boundary event mode - handling click');
+            console.log('   Click target:', e.target);
+            console.log('   Click target class:', e.target.getAttribute('class'));
+
+            // Try to find a BPMN element (task) from the click
+            // SVG elements might be nested, so we need to search upward
+            let target = e.target;
+            let taskElement = null;
+
+            // Search up the DOM tree for an element with data-id
+            while (target && target !== this.canvas) {
+                console.log('   Checking element:', target.tagName, target.getAttribute('data-id'));
+
+                if (target.hasAttribute('data-id')) {
+                    const elementId = target.getAttribute('data-id');
+                    console.log('   Found element with data-id:', elementId);
+
+                    // Check if this is a task element
+                    if (this.isTaskElement(elementId)) {
+                        console.log('   ✅ Element is a task! Attaching boundary event...');
+                        this.attachBoundaryEvent(elementId);
+                        return;
+                    } else {
+                        console.log('   ❌ Element is not a task - type check failed');
+                        const elem = this.elements.find(el => el.id === elementId);
+                        console.log('   Element details:', elem ? elem.type : 'not found');
+                    }
+                }
+
+                target = target.parentElement;
+            }
+
+            console.log('   ❌ No task found - cancelling boundary event mode');
+            this.exitBoundaryEventMode();
+            return;
+        }
+
         if (e.target === this.canvas || e.target === this.mainGroup) {
             this.deselectAll();
         }
@@ -2383,6 +2908,19 @@ Your tasks:
             this.connectionsLayer.innerHTML = '';
             this.elementsLayer.innerHTML = '';
             this.propertiesContent.innerHTML = '<p class="placeholder">Select an element to edit properties</p>';
+
+            // Clear tokens layer if it exists
+            const tokensLayer = document.getElementById('tokensLayer');
+            if (tokensLayer) {
+                tokensLayer.remove();
+                console.log('🧹 Removed tokensLayer (will be recreated on next execution)');
+            }
+
+            // Clear AG-UI execution state if client exists
+            if (typeof aguiClient !== 'undefined' && aguiClient) {
+                console.log('🧹 Clearing AG-UI execution state');
+                aguiClient.clearAllHighlights();
+            }
         }
     }
 
@@ -2390,7 +2928,13 @@ Your tasks:
         const data = {
             process: {
                 id: 'process_1',
-                name: 'BPMN Process',
+                name: this.workflowName,
+                subProcessDefinitions: this.subProcessDefinitions.map(def => ({
+                    id: def.id,
+                    name: def.name,
+                    elements: def.elements,
+                    connections: def.connections
+                })),
                 pools: this.pools.map(pool => ({
                     id: pool.id,
                     name: pool.name,
@@ -2456,6 +3000,17 @@ Your tasks:
                 this.newDiagram(true);
 
                 if (data.process) {
+                    // Load workflow name
+                    if (data.process.name) {
+                        this.workflowName = data.process.name;
+                    }
+
+                    // Load subprocess definitions
+                    if (data.process.subProcessDefinitions) {
+                        this.subProcessDefinitions = data.process.subProcessDefinitions;
+                        this.renderSubProcessDefinitionsList();
+                    }
+
                     if (data.process.pools) {
                         data.process.pools.forEach(pool => {
                             this.pools.push(pool);
@@ -2745,7 +3300,167 @@ Your tasks:
         };
         return labels[category] || category;
     }
+
+    // ===== SUBPROCESS DEFINITION MANAGEMENT =====
+
+    createSubProcessDefinition() {
+        const name = prompt('Enter subprocess name:', 'New Subprocess');
+        if (!name) return;
+
+        const id = this.generateId('subprocess_def');
+        const subProcessDef = {
+            id: id,
+            name: name,
+            elements: [],
+            connections: []
+        };
+
+        this.subProcessDefinitions.push(subProcessDef);
+        this.renderSubProcessDefinitionsList();
+        this.editSubProcessDefinition(subProcessDef);
+    }
+
+    renderSubProcessDefinitionsList() {
+        const listContainer = document.getElementById('subProcessDefList');
+
+        if (this.subProcessDefinitions.length === 0) {
+            listContainer.innerHTML = `
+                <p class="placeholder" style="font-size: 0.85rem; color: #999; padding: 0.5rem;">
+                    No subprocess definitions.<br>
+                    Click + to create one.
+                </p>
+            `;
+            return;
+        }
+
+        listContainer.innerHTML = '';
+
+        this.subProcessDefinitions.forEach(def => {
+            const item = document.createElement('div');
+            item.className = 'subprocess-def-item';
+            if (this.editingSubProcess && this.editingSubProcess.id === def.id) {
+                item.classList.add('active');
+            }
+
+            item.innerHTML = `
+                <span class="subprocess-def-name">${def.name}</span>
+                <div class="subprocess-def-actions">
+                    <button class="btn-icon" title="Edit">✏️</button>
+                    <button class="btn-icon danger" title="Delete">🗑️</button>
+                </div>
+            `;
+
+            const editBtn = item.querySelector('.btn-icon:not(.danger)');
+            const deleteBtn = item.querySelector('.btn-icon.danger');
+
+            editBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.editSubProcessDefinition(def);
+            });
+
+            deleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (confirm(`Delete subprocess "${def.name}"?`)) {
+                    this.deleteSubProcessDefinition(def.id);
+                }
+            });
+
+            item.addEventListener('click', () => {
+                this.editSubProcessDefinition(def);
+            });
+
+            listContainer.appendChild(item);
+        });
+    }
+
+    editSubProcessDefinition(subProcessDef) {
+        // Save current main canvas state
+        if (!this.isSubProcessEditorMode) {
+            this.mainCanvasState = {
+                elements: [...this.elements],
+                connections: [...this.connections],
+                pools: [...this.pools]
+            };
+        }
+
+        // Enter subprocess editor mode
+        this.isSubProcessEditorMode = true;
+        this.editingSubProcess = subProcessDef;
+
+        // Load subprocess elements into canvas
+        this.elements = [...subProcessDef.elements];
+        this.connections = [...subProcessDef.connections];
+        this.pools = []; // Subprocesses don't have pools
+
+        // Clear and re-render
+        this.clearCanvas();
+        this.rerenderElements();
+
+        // Show editor indicator
+        document.getElementById('subprocessEditorIndicator').style.display = 'flex';
+        document.getElementById('subprocessEditorName').textContent = subProcessDef.name;
+
+        // Disable pool button in subprocess mode
+        document.getElementById('addPoolBtn').disabled = true;
+
+        // Update list to show active subprocess
+        this.renderSubProcessDefinitionsList();
+
+        console.log(`Editing subprocess: ${subProcessDef.name}`);
+    }
+
+    exitSubProcessEditor() {
+        if (!this.isSubProcessEditorMode) return;
+
+        // Save current subprocess state
+        if (this.editingSubProcess) {
+            this.editingSubProcess.elements = [...this.elements];
+            this.editingSubProcess.connections = [...this.connections];
+        }
+
+        // Restore main canvas state
+        this.elements = this.mainCanvasState.elements;
+        this.connections = this.mainCanvasState.connections;
+        this.pools = this.mainCanvasState.pools;
+
+        // Exit subprocess editor mode
+        this.isSubProcessEditorMode = false;
+        this.editingSubProcess = null;
+
+        // Clear and re-render
+        this.clearCanvas();
+        this.rerenderElements();
+
+        // Hide editor indicator
+        document.getElementById('subprocessEditorIndicator').style.display = 'none';
+
+        // Re-enable pool button
+        document.getElementById('addPoolBtn').disabled = false;
+
+        // Update list
+        this.renderSubProcessDefinitionsList();
+
+        console.log('Exited subprocess editor');
+    }
+
+    deleteSubProcessDefinition(id) {
+        this.subProcessDefinitions = this.subProcessDefinitions.filter(def => def.id !== id);
+
+        // If we're editing the deleted subprocess, exit editor mode
+        if (this.editingSubProcess && this.editingSubProcess.id === id) {
+            this.exitSubProcessEditor();
+        }
+
+        this.renderSubProcessDefinitionsList();
+    }
+
+    clearCanvas() {
+        this.poolsLayer.innerHTML = '';
+        this.connectionsLayer.innerHTML = '';
+        this.elementsLayer.innerHTML = '';
+    }
 }
+
 
 // Initialize the application
 const modeler = new BPMNModeler();

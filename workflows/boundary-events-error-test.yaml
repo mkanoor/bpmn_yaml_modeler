@@ -1,0 +1,190 @@
+process:
+  id: process_1
+  name: Error Boundary Events Test
+
+  pools:
+    - id: pool_1
+      name: Error Handling Demo
+      x: 50
+      y: 50
+      width: 1200
+      height: 400
+      lanes:
+        - id: lane_1
+          name: Main Flow
+          height: 400
+
+  elements:
+    # Start
+    - id: start_1
+      type: startEvent
+      name: Start
+      x: 150
+      y: 200
+      poolId: pool_1
+      laneId: lane_1
+      properties: {}
+
+    # Task 1 - Will complete successfully
+    - id: task_success
+      type: scriptTask
+      name: Safe Task (No Error)
+      x: 350
+      y: 100
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        scriptFormat: Python
+        script: |
+          print("🔵 Safe task starting...")
+          result = 10 + 20
+          print(f"🔵 Safe task completed: {result}")
+          result = {'status': 'success', 'value': result}
+
+    # Error boundary on task_success (won't trigger - no error)
+    - id: error_boundary_1
+      type: errorBoundaryEvent
+      name: Catch Error
+      x: 395
+      y: 125
+      poolId: pool_1
+      laneId: lane_1
+      attachedToRef: task_success
+      properties:
+        errorCode: ""
+        cancelActivity: true
+
+    # Task 2 - Will fail with error
+    - id: task_fail
+      type: scriptTask
+      name: Failing Task (Division by Zero)
+      x: 350
+      y: 250
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        scriptFormat: Python
+        script: |
+          print("🔴 Failing task starting...")
+          print("🔴 About to divide by zero...")
+          result = 10 / 0  # This will raise ZeroDivisionError
+          print("🔴 This line won't execute")
+          result = {'status': 'completed'}
+
+    # Error boundary on task_fail (WILL trigger on error)
+    - id: error_boundary_2
+      type: errorBoundaryEvent
+      name: Catch Error
+      x: 395
+      y: 275
+      poolId: pool_1
+      laneId: lane_1
+      attachedToRef: task_fail
+      properties:
+        errorCode: ""  # Catch all errors
+        cancelActivity: true
+
+    # Error handler
+    - id: handle_error
+      type: scriptTask
+      name: Handle Error Gracefully
+      x: 550
+      y: 350
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        scriptFormat: Python
+        script: |
+          print("⚠️ Error handler triggered!")
+          print("⚠️ Logging error and continuing workflow...")
+          result = {'status': 'error_handled', 'recovered': True}
+
+    # Merge gateway
+    - id: merge_gateway
+      type: inclusiveGateway
+      name: Merge
+      x: 750
+      y: 200
+      poolId: pool_1
+      laneId: lane_1
+      properties: {}
+
+    # Final task
+    - id: final_task
+      type: scriptTask
+      name: Complete Workflow
+      x: 900
+      y: 200
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        scriptFormat: Python
+        script: |
+          print("✅ Workflow completed!")
+          print("✅ Error was caught and handled - no crash!")
+          result = {'completed': True}
+
+    # End
+    - id: end_1
+      type: endEvent
+      name: End
+      x: 1050
+      y: 200
+      poolId: pool_1
+      laneId: lane_1
+      properties: {}
+
+  connections:
+    # Start to fork
+    - id: conn1
+      type: sequenceFlow
+      from: start_1
+      to: task_success
+      properties: {}
+
+    - id: conn2
+      type: sequenceFlow
+      from: start_1
+      to: task_fail
+      properties: {}
+
+    # Error boundary to error handler
+    - id: conn3
+      type: sequenceFlow
+      name: Error
+      from: error_boundary_2
+      to: handle_error
+      properties: {}
+
+    # Success paths to merge
+    - id: conn4
+      type: sequenceFlow
+      from: task_success
+      to: merge_gateway
+      properties: {}
+
+    - id: conn5
+      type: sequenceFlow
+      from: task_fail
+      to: merge_gateway
+      properties: {}
+
+    - id: conn6
+      type: sequenceFlow
+      from: handle_error
+      to: merge_gateway
+      properties: {}
+
+    # Merge to final
+    - id: conn7
+      type: sequenceFlow
+      from: merge_gateway
+      to: final_task
+      properties: {}
+
+    # Final to end
+    - id: conn8
+      type: sequenceFlow
+      from: final_task
+      to: end_1
+      properties: {}
