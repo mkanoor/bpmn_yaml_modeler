@@ -35,6 +35,9 @@
                         <option value="emerald">💎 Emerald (2013)</option>
                         <option value="tangerine-tango">🍊 Tangerine Tango (2012)</option>
                     </optgroup>
+                    <optgroup label="Pantone Featured Colors">
+                        <option value="cloud-dancer">☁️ Cloud Dancer</option>
+                    </optgroup>
                 </select>
             </div>
             <div class="toolbar">
@@ -43,6 +46,23 @@
                 <button id="loadBtn" class="btn">Import YAML</button>
                 <input type="file" id="fileInput" accept=".yaml,.yml" style="display: none;">
                 <button id="executeBtn" class="btn execute-workflow-btn">▶ Execute Workflow</button>
+                <button id="simulateBtn" class="btn" style="background-color: #9b59b6; color: white;">🎬 Simulate</button>
+
+                <!-- Simulation Controls (hidden by default, shown during simulation) -->
+                <div id="simulationToolbarControls" style="display: none; margin-left: 0.5rem; padding: 0.3rem 0.8rem; background: #f0f0f0; border-radius: 4px; border: 2px solid #9b59b6;">
+                    <span style="font-size: 0.85rem; font-weight: bold; color: #9b59b6; margin-right: 0.5rem;">🎬 Simulation:</span>
+                    <button id="pauseSimToolbarBtn" class="btn-small">⏸️ Pause</button>
+                    <button id="resumeSimToolbarBtn" class="btn-small" style="display: none;">▶️ Resume</button>
+                    <button id="stopSimToolbarBtn" class="btn-small" style="background-color: #e74c3c; color: white;">⏹️ Stop</button>
+                    <select id="simSpeedToolbar" style="margin-left: 0.5rem; padding: 0.3rem 0.5rem; border: 1px solid #ccc; border-radius: 3px; font-size: 0.85rem;">
+                        <option value="0.5">0.5x</option>
+                        <option value="1" selected>1x</option>
+                        <option value="2">2x</option>
+                        <option value="5">5x</option>
+                        <option value="10">10x</option>
+                    </select>
+                </div>
+
                 <button id="clearExecutionBtn" class="btn" style="background-color: #95a5a6; color: white;">Clear Execution</button>
             </div>
         </header>
@@ -234,6 +254,94 @@
                 </div>
 
                 <div class="palette-section">
+                    <h4>Boundary Events (Interrupting)</h4>
+                    <div class="palette-section-items">
+                    <div class="palette-item" data-type="errorBoundaryEvent" data-interrupting="true" title="Error Boundary Event (Interrupting) - Catches exceptions and stops the task. Solid border = interrupting.">
+                        <svg width="40" height="40">
+                            <circle cx="20" cy="20" r="12" fill="white" stroke="#e74c3c" stroke-width="2"/>
+                            <circle cx="20" cy="20" r="9" fill="none" stroke="#e74c3c" stroke-width="1.5"/>
+                            <!-- Lightning bolt icon -->
+                            <path d="M 22 13 L 17 20 L 20 20 L 18 27 L 23 20 L 20 20 Z" fill="#e74c3c" stroke="none"/>
+                        </svg>
+                        <span style="font-size: 0.7rem;">Error (I)</span>
+                    </div>
+                    <div class="palette-item" data-type="timerBoundaryEvent" data-interrupting="true" title="Timer Boundary Event (Interrupting) - Timeout stops the task. Solid border = interrupting.">
+                        <svg width="40" height="40">
+                            <circle cx="20" cy="20" r="12" fill="white" stroke="#f39c12" stroke-width="2"/>
+                            <circle cx="20" cy="20" r="9" fill="none" stroke="#f39c12" stroke-width="1.5"/>
+                            <!-- Clock icon -->
+                            <circle cx="20" cy="20" r="6" fill="none" stroke="#f39c12" stroke-width="1.5"/>
+                            <line x1="20" y1="20" x2="20" y2="16" stroke="#f39c12" stroke-width="1.5"/>
+                            <line x1="20" y1="20" x2="23" y2="20" stroke="#f39c12" stroke-width="1.5"/>
+                        </svg>
+                        <span style="font-size: 0.7rem;">Timer (I)</span>
+                    </div>
+                    <div class="palette-item" data-type="escalationBoundaryEvent" data-interrupting="true" title="Escalation Boundary Event (Interrupting) - Escalates and stops task. Solid border = interrupting.">
+                        <svg width="40" height="40">
+                            <circle cx="20" cy="20" r="12" fill="white" stroke="#9b59b6" stroke-width="2"/>
+                            <circle cx="20" cy="20" r="9" fill="none" stroke="#9b59b6" stroke-width="1.5"/>
+                            <!-- Up arrow icon -->
+                            <path d="M 20 15 L 16 21 L 18.5 21 L 18.5 25 L 21.5 25 L 21.5 21 L 24 21 Z" fill="#9b59b6" stroke="none"/>
+                        </svg>
+                        <span style="font-size: 0.7rem;">Escalate (I)</span>
+                    </div>
+                    <div class="palette-item" data-type="signalBoundaryEvent" data-interrupting="true" title="Signal Boundary Event (Interrupting) - Signal stops the task. Solid border = interrupting.">
+                        <svg width="40" height="40">
+                            <circle cx="20" cy="20" r="12" fill="white" stroke="#3498db" stroke-width="2"/>
+                            <circle cx="20" cy="20" r="9" fill="none" stroke="#3498db" stroke-width="1.5"/>
+                            <!-- Triangle (signal) icon -->
+                            <path d="M 20 15 L 25 24 L 15 24 Z" fill="none" stroke="#3498db" stroke-width="1.5"/>
+                        </svg>
+                        <span style="font-size: 0.7rem;">Signal (I)</span>
+                    </div>
+                    </div>
+                </div>
+
+                <div class="palette-section">
+                    <h4>Boundary Events (Non-Interrupting)</h4>
+                    <div class="palette-section-items">
+                    <div class="palette-item" data-type="errorBoundaryEvent" data-interrupting="false" title="Error Boundary Event (Non-Interrupting) - Catches errors but task continues. Dashed border = non-interrupting.">
+                        <svg width="40" height="40">
+                            <circle cx="20" cy="20" r="12" fill="white" stroke="#e74c3c" stroke-width="2" stroke-dasharray="3,2"/>
+                            <circle cx="20" cy="20" r="9" fill="none" stroke="#e74c3c" stroke-width="1.5" stroke-dasharray="2,1.5"/>
+                            <!-- Lightning bolt icon -->
+                            <path d="M 22 13 L 17 20 L 20 20 L 18 27 L 23 20 L 20 20 Z" fill="#e74c3c" stroke="none"/>
+                        </svg>
+                        <span style="font-size: 0.7rem;">Error (NI)</span>
+                    </div>
+                    <div class="palette-item" data-type="timerBoundaryEvent" data-interrupting="false" title="Timer Boundary Event (Non-Interrupting) - Triggers on timeout but task continues. Dashed border = non-interrupting.">
+                        <svg width="40" height="40">
+                            <circle cx="20" cy="20" r="12" fill="white" stroke="#f39c12" stroke-width="2" stroke-dasharray="3,2"/>
+                            <circle cx="20" cy="20" r="9" fill="none" stroke="#f39c12" stroke-width="1.5" stroke-dasharray="2,1.5"/>
+                            <!-- Clock icon -->
+                            <circle cx="20" cy="20" r="6" fill="none" stroke="#f39c12" stroke-width="1.5"/>
+                            <line x1="20" y1="20" x2="20" y2="16" stroke="#f39c12" stroke-width="1.5"/>
+                            <line x1="20" y1="20" x2="23" y2="20" stroke="#f39c12" stroke-width="1.5"/>
+                        </svg>
+                        <span style="font-size: 0.7rem;">Timer (NI)</span>
+                    </div>
+                    <div class="palette-item" data-type="escalationBoundaryEvent" data-interrupting="false" title="Escalation Boundary Event (Non-Interrupting) - Escalates but task continues. Dashed border = non-interrupting.">
+                        <svg width="40" height="40">
+                            <circle cx="20" cy="20" r="12" fill="white" stroke="#9b59b6" stroke-width="2" stroke-dasharray="3,2"/>
+                            <circle cx="20" cy="20" r="9" fill="none" stroke="#9b59b6" stroke-width="1.5" stroke-dasharray="2,1.5"/>
+                            <!-- Up arrow icon -->
+                            <path d="M 20 15 L 16 21 L 18.5 21 L 18.5 25 L 21.5 25 L 21.5 21 L 24 21 Z" fill="#9b59b6" stroke="none"/>
+                        </svg>
+                        <span style="font-size: 0.7rem;">Escalate (NI)</span>
+                    </div>
+                    <div class="palette-item" data-type="signalBoundaryEvent" data-interrupting="false" title="Signal Boundary Event (Non-Interrupting) - Catches signal but task continues. Dashed border = non-interrupting.">
+                        <svg width="40" height="40">
+                            <circle cx="20" cy="20" r="12" fill="white" stroke="#3498db" stroke-width="2" stroke-dasharray="3,2"/>
+                            <circle cx="20" cy="20" r="9" fill="none" stroke="#3498db" stroke-width="1.5" stroke-dasharray="2,1.5"/>
+                            <!-- Triangle (signal) icon -->
+                            <path d="M 20 15 L 25 24 L 15 24 Z" fill="none" stroke="#3498db" stroke-width="1.5"/>
+                        </svg>
+                        <span style="font-size: 0.7rem;">Signal (NI)</span>
+                    </div>
+                    </div>
+                </div>
+
+                <div class="palette-section">
                     <h4>Swimlanes</h4>
                     <div class="palette-section-items">
                     <div class="palette-item" data-type="pool" title="Pool - Container representing a participant or organization in the workflow">
@@ -263,6 +371,20 @@
                     </div>
                     </div>
                 </div>
+
+                <!-- Subprocess Definitions Panel -->
+                <div class="palette-section subprocess-definitions-section">
+                    <h4 style="display: flex; align-items: center; justify-content: space-between;">
+                        <span>📚 Subprocess Definitions</span>
+                        <button id="addSubProcessDefBtn" class="btn-icon" title="Create new subprocess definition">+</button>
+                    </h4>
+                    <div id="subProcessDefList" class="subprocess-def-list">
+                        <p class="placeholder" style="font-size: 0.85rem; color: #999; padding: 0.5rem;">
+                            No subprocess definitions.<br>
+                            Click + to create one.
+                        </p>
+                    </div>
+                </div>
             </aside>
 
             <main class="canvas-container">
@@ -277,6 +399,11 @@
                     <button id="fitToViewBtn" class="btn-small" title="Fit to View">⛶ Fit</button>
                     <span style="margin: 0 0.5rem; color: #666; font-size: 0.85rem;" title="Shift+Drag or Middle-Click to Pan">✋ Pan: Shift+Drag</span>
                     <button id="deleteBtn" class="btn-small btn-danger">Delete Selected</button>
+                    <span style="margin: 0 0.5rem; border-left: 1px solid #ccc;"></span>
+                    <div id="subprocessEditorIndicator" style="display: none; background: #3498db; color: white; padding: 0.3rem 0.8rem; border-radius: 4px; font-size: 0.85rem; font-weight: bold;">
+                        📝 Editing Subprocess: <span id="subprocessEditorName"></span>
+                        <button id="exitSubprocessEditorBtn" style="margin-left: 0.5rem; background: white; color: #3498db; border: none; padding: 0.2rem 0.5rem; border-radius: 3px; cursor: pointer; font-weight: bold;">✕ Close</button>
+                    </div>
                 </div>
                 <svg id="canvas" width="100%" height="100%">
                     <defs>
@@ -335,11 +462,45 @@
                 </div>
             </div>
         </div>
+
+        <div id="simulateModal" class="modal">
+            <div class="modal-content" style="max-width: 500px;">
+                <span class="close">&times;</span>
+                <h2>🎬 Start Simulation</h2>
+
+                <div class="simulation-info" style="background: #f0f8ff; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
+                    <p style="margin: 0; font-size: 0.9rem;">
+                        <strong>Simulation Mode:</strong> Visualize token flow without executing actual tasks.
+                        Controls will appear in the toolbar during playback.
+                    </p>
+                </div>
+
+                <div class="execution-form">
+                    <div class="form-group">
+                        <label for="simulationSpeed">Simulation Speed:</label>
+                        <select id="simulationSpeed" style="width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; font-size: 1rem;">
+                            <option value="0.5">🐌 0.5x - Slow (presentations)</option>
+                            <option value="1" selected>▶️ 1x - Normal</option>
+                            <option value="2">⚡ 2x - Fast</option>
+                            <option value="5">🚀 5x - Very Fast</option>
+                            <option value="10">💨 10x - Ultra Fast</option>
+                        </select>
+                        <p class="help-text">You can change speed during playback using the toolbar controls.</p>
+                    </div>
+
+                    <div class="modal-actions">
+                        <button id="startSimulationBtn" class="btn" style="background-color: #9b59b6; color: white; font-size: 1rem; padding: 0.6rem 1.5rem;">🎬 Start Simulation</button>
+                        <button id="cancelSimulationBtn" class="btn">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js"></script>
     <script src="agui-client.js"></script>
     <script src="app.js"></script>
     <script src="workflow-executor.js"></script>
+    <script src="token-simulator.js"></script>
 </body>
 </html>

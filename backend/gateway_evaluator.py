@@ -137,8 +137,13 @@ class GatewayEvaluator:
             # Safe evaluation (limited scope)
             result = eval(resolved, {"__builtins__": {}}, context)
             return bool(result)
-        except:
+        except KeyError as e:
+            # Variable doesn't exist in context - treat as False
+            logger.warning(f"KeyError evaluating condition '{condition}': {e} - treating as False")
+            return False
+        except Exception as e:
             # If not an expression, check as string
+            logger.debug(f"Expression evaluation failed: {e}, checking as string")
             resolved_lower = resolved.lower().strip()
             return resolved_lower in ['true', 'yes', '1', 'approved']
 

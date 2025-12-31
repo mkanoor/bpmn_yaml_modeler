@@ -1,0 +1,373 @@
+process:
+  id: process_1
+  name: Call Activity Approval Demo - Reusable Subprocess Pattern
+
+  # Subprocess Definitions - Reusable process templates
+  subProcessDefinitions:
+    - id: email_approval_subprocess
+      name: Email Approval Subprocess
+      elements:
+        - id: sp_start
+          type: startEvent
+          name: Start
+          x: 100
+          y: 200
+          properties: {}
+
+        - id: sp_send
+          type: sendTask
+          name: Send Approval Email
+          x: 250
+          y: 200
+          properties:
+            messageType: Email
+            to: ""
+            subject: "Approval Required: ${taskName}"
+            messageBody: |
+              Please review and approve the following request.
+
+              Task: ${taskName}
+              Details: ${taskDetails}
+
+              Click below to approve or deny:
+            useGmail: true
+            htmlFormat: true
+            includeApprovalLinks: true
+            approvalMessageRef: approvalRequest
+            approvalCorrelationKey: "${workflowInstanceId}-${taskId}"
+            documentation: Send email with approve/deny webhook links
+
+        - id: sp_receive
+          type: receiveTask
+          name: Await Response
+          x: 450
+          y: 200
+          properties:
+            messageRef: approvalRequest
+            correlationKey: "${workflowInstanceId}-${taskId}"
+            timeout: "3600000"
+            useWebhook: true
+            documentation: Wait for approval/denial via email webhook (1 hour timeout)
+
+        - id: sp_end
+          type: endEvent
+          name: End
+          x: 600
+          y: 200
+          properties: {}
+
+      connections:
+        - id: sp_conn1
+          type: sequenceFlow
+          name: ""
+          from: sp_start
+          to: sp_send
+          properties: {}
+
+        - id: sp_conn2
+          type: sequenceFlow
+          name: ""
+          from: sp_send
+          to: sp_receive
+          properties: {}
+
+        - id: sp_conn3
+          type: sequenceFlow
+          name: ""
+          from: sp_receive
+          to: sp_end
+          properties: {}
+
+  # Main Process
+  pools:
+    - id: pool_1
+      name: Dual Approval Workflow
+      x: 50
+      y: 50
+      width: 2400
+      height: 600
+      lanes:
+        - id: lane_1
+          name: Main Process Flow
+          height: 250
+        - id: lane_2
+          name: Execution
+          height: 350
+
+  elements:
+    # Start Event
+    - id: element_1
+      type: startEvent
+      name: Start Process
+      x: 120
+      y: 150
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: Workflow demonstrates reusable subprocess via callActivity
+
+    # Task 1 - Initial Processing
+    - id: element_2
+      type: scriptTask
+      name: Initial Processing
+      x: 250
+      y: 150
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        scriptFormat: Python
+        resultVariable: processData
+        documentation: First task that needs approval
+        script: |
+          print('Processing initial data...')
+          result = {
+              'task': 'Initial Processing',
+              'data': 'Some important data',
+              'requiresApproval': True
+          }
+
+    # Call Activity 1 - References Email Approval Subprocess (First Use)
+    - id: element_3
+      type: callActivity
+      name: Email Approval
+      x: 420
+      y: 150
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        calledElement: email_approval_subprocess
+        inheritVariables: true
+        documentation: "Calls the email approval subprocess definition"
+
+    # Gateway - Check First Approval
+    - id: element_4
+      type: exclusiveGateway
+      name: Approved?
+      x: 600
+      y: 150
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: Check if first approval was granted
+
+    # Task 2 - Second Processing (only if first approved)
+    - id: element_5
+      type: scriptTask
+      name: Second Processing
+      x: 760
+      y: 150
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        scriptFormat: Python
+        resultVariable: secondProcessData
+        documentation: Second task that also needs approval
+        script: |
+          print('Processing second stage...')
+          result = {
+              'task': 'Second Processing',
+              'data': 'More critical data',
+              'requiresApproval': True
+          }
+
+    # Call Activity 2 - References SAME Email Approval Subprocess (Second Use - REUSED!)
+    - id: element_6
+      type: callActivity
+      name: Email Approval
+      x: 930
+      y: 150
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        calledElement: email_approval_subprocess
+        inheritVariables: true
+        documentation: "Calls the SAME subprocess definition - demonstrates true reuse"
+
+    # Gateway - Check Second Approval
+    - id: element_7
+      type: exclusiveGateway
+      name: Approved?
+      x: 1110
+      y: 150
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: Check if second approval was granted
+
+    # Final Execution (in Execution lane)
+    - id: element_8
+      type: scriptTask
+      name: Execute Approved Actions
+      x: 1270
+      y: 450
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        scriptFormat: Python
+        resultVariable: executionResult
+        documentation: Execute actions after both approvals granted
+        script: |
+          print('Executing approved actions...')
+          print('First approval: ' + str(context.get('decision')))
+          print('Second approval: ' + str(context.get('decision')))
+          result = {
+              'status': 'success',
+              'message': 'Both approvals granted, actions executed'
+          }
+
+    # Success End
+    - id: element_9
+      type: endEvent
+      name: Success
+      x: 1510
+      y: 450
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        documentation: Both approvals granted, workflow complete
+
+    # First Rejection Notification
+    - id: element_10
+      type: sendTask
+      name: Notify First Rejection
+      x: 600
+      y: 350
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        messageType: Email
+        to: ""
+        subject: Request Denied - First Approval
+        messageBody: The first approval request was denied. Workflow terminated.
+        documentation: Notify of first rejection
+
+    # First Rejection End
+    - id: element_11
+      type: endEvent
+      name: Rejected (First)
+      x: 760
+      y: 350
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        documentation: First approval rejected
+
+    # Second Rejection Notification
+    - id: element_12
+      type: sendTask
+      name: Notify Second Rejection
+      x: 1110
+      y: 350
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        messageType: Email
+        to: ""
+        subject: Request Denied - Second Approval
+        messageBody: The second approval request was denied. Workflow terminated.
+        documentation: Notify of second rejection
+
+    # Second Rejection End
+    - id: element_13
+      type: endEvent
+      name: Rejected (Second)
+      x: 1270
+      y: 350
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        documentation: Second approval rejected
+
+  connections:
+    # Main happy path
+    - id: conn_1
+      type: sequenceFlow
+      name: ""
+      from: element_1
+      to: element_2
+      properties: {}
+
+    - id: conn_2
+      type: sequenceFlow
+      name: needs approval
+      from: element_2
+      to: element_3
+      properties: {}
+
+    - id: conn_3
+      type: sequenceFlow
+      name: ""
+      from: element_3
+      to: element_4
+      properties: {}
+
+    # First approval decision
+    - id: conn_4
+      type: sequenceFlow
+      name: approved
+      from: element_4
+      to: element_5
+      properties:
+        condition: ""
+
+    - id: conn_5
+      type: sequenceFlow
+      name: rejected
+      from: element_4
+      to: element_10
+      properties:
+        condition: "${decision} == 'rejected'"
+
+    - id: conn_6
+      type: sequenceFlow
+      name: ""
+      from: element_10
+      to: element_11
+      properties: {}
+
+    # Second approval flow
+    - id: conn_7
+      type: sequenceFlow
+      name: needs approval
+      from: element_5
+      to: element_6
+      properties: {}
+
+    - id: conn_8
+      type: sequenceFlow
+      name: ""
+      from: element_6
+      to: element_7
+      properties: {}
+
+    # Second approval decision
+    - id: conn_9
+      type: sequenceFlow
+      name: approved
+      from: element_7
+      to: element_8
+      properties:
+        condition: ""
+
+    - id: conn_10
+      type: sequenceFlow
+      name: rejected
+      from: element_7
+      to: element_12
+      properties:
+        condition: "${decision} == 'rejected'"
+
+    - id: conn_11
+      type: sequenceFlow
+      name: ""
+      from: element_12
+      to: element_13
+      properties: {}
+
+    # Final execution
+    - id: conn_12
+      type: sequenceFlow
+      name: ""
+      from: element_8
+      to: element_9
+      properties: {}

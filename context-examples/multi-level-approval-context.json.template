@@ -1,0 +1,29 @@
+{
+  "requestId": "REQ-001",
+  "requestType": "Software Installation",
+  "requestDetails": "Install Visual Studio Code with Python and JavaScript extensions",
+  "priority": "Medium",
+  "urgency": "Normal",
+
+  "requesterId": "user123",
+  "requesterName": "John Doe",
+  "requesterEmail": "john.doe@example.com",
+
+  "itAdminId": "admin456",
+  "itAdminName": "Sarah Admin",
+  "itAdminEmail": "your-admin-email@gmail.com",
+
+  "itManagerId": "manager789",
+  "itManagerName": "Michael Manager",
+  "itManagerEmail": "your-manager-email@gmail.com",
+
+  "adminTimeoutMinutes": 5,
+  "escalationMinutes": 5,
+  "managerTimeoutMinutes": 10,
+
+  "submittedTime": "2024-12-30T21:45:00Z",
+  "approverName": "",
+  "approvedTime": "",
+  "rejectedTime": "",
+  "rejectionReason": ""
+}

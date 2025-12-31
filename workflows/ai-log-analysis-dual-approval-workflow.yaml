@@ -44,85 +44,145 @@ process:
       properties:
         messageRef: "logFileUpload"
         timeout: "300000"
-        documentation: "Receive and validate uploaded log file"
-
-    # Service Task - Store Log File
-    - id: element_3
-      type: serviceTask
-      name: Store in S3
-      x: 390
-      y: 130
-      poolId: pool_1
-      laneId: lane_1
-      properties:
-        implementation: "External"
-        topic: "file-storage"
-        resultVariable: "logFileUrl"
-        documentation: "Store log file in S3 bucket for processing"
+        resultVariable: "logFileContent"
+        documentation: "Receive and validate uploaded log file - content is passed directly to AI analysis"
         custom:
-          bucket: "devops-logs"
-          encryption: "AES256"
-          retention: "30days"
+          acceptedFormats: ".log, .txt"
+          maxFileSize: "10MB"
+          readFileContent: "true"
 
     # ===== AI ANALYSIS LANE =====
 
-    # Agentic Task 1 - Log Analysis with MCP Tools
+    # Agentic Task - Complete Log Analysis & Diagnostics
     - id: element_4
       type: agenticTask
-      name: Analyze Logs with MCP
+      name: Analyze & Generate Diagnostics
       x: 390
       y: 330
       poolId: pool_1
       laneId: lane_2
       properties:
-        agentType: "log-analyzer"
+        agentType: "diagnostic-analyzer"
         model: "anthropic/claude-3.5-sonnet"
-        capabilities: "log-parsing, pattern-recognition, root-cause-analysis, mcp-tool-usage"
-        confidenceThreshold: 0.8
-        maxRetries: 2
-        learningEnabled: true
-        documentation: "AI agent uses MCP tools to analyze log files and identify issues"
-        custom:
-          mcpTools:
-            - "filesystem-read"
-            - "grep-search"
-            - "regex-match"
-            - "log-parser"
-            - "error-classifier"
-          analysisDepth: "comprehensive"
-          contextWindow: "16384"
-          temperature: "0.3"
-          systemPrompt: |
-            You are an expert DevOps engineer analyzing system logs.
-            Use MCP tools to:
-            1. Read and parse log files
-            2. Search for error patterns
-            3. Identify root causes
-            4. Classify issue severity
-            5. Generate diagnostic steps
-
-    # Agentic Task 2 - Generate Diagnostic Steps
-    - id: element_5
-      type: agenticTask
-      name: Generate Diagnostics
-      x: 550
-      y: 330
-      poolId: pool_1
-      laneId: lane_2
-      properties:
-        agentType: "diagnostic-generator"
-        model: "openai/gpt-4o"
-        capabilities: "step-generation, prioritization, validation"
+        capabilities: "log-parsing, pattern-recognition, root-cause-analysis, remediation-generation, mcp-tool-usage"
         confidenceThreshold: 0.85
         maxRetries: 3
         learningEnabled: true
-        documentation: "Generate structured diagnostic and remediation steps"
+        allowCancellation: true
+        resultVariable: "diagnosticResults"
+        documentation: "AI agent performs complete log analysis, root cause identification, and remediation step generation"
         custom:
-          outputFormat: "json"
-          includeExplanations: "true"
-          prioritizeBySeverity: "true"
-          estimateImpact: "true"
+          inputVariable: "logFileContent"
+          mcpTools:
+            - "security-lookup"
+            - "kb-search"
+          analysisDepth: "comprehensive"
+          contextWindow: "16384"
           temperature: "0.2"
+          maxIterations: 20
+          aguiEventCategories:
+            - "messaging"
+            - "tool"
+            - "lifecycle"
+          systemPrompt: |
+            You are a system diagnostics expert analyzing error logs.
+
+            TASK: Analyze error logs, research root causes, and generate complete remediation plans.
+
+            Feel free to think through your analysis step-by-step, use your reasoning, and explain your findings as you work through the problem.
+
+            AVAILABLE TOOLS:
+            - log_parser: Parse log entries, extract timestamps, error codes, stack traces
+            - grep_search: Search for specific patterns in log content
+            - regex_match: Extract structured data using regex patterns
+            - error_classifier: Classify errors by severity and type
+            - security_lookup: Query security databases for CVEs and advisories
+            - kb_search: Search knowledge bases for solutions and articles
+
+            PROCESS:
+            1. PARSE LOGS:
+               - Identify error codes, stack traces, affected services
+               - Extract timestamps to determine timeline
+               - Find CVE IDs, component names, version numbers
+               - Classify errors by severity (critical, high, medium, low)
+
+            2. INVESTIGATE ROOT CAUSES:
+               - Use security_lookup to check for known CVEs
+               - For each CVE found, use kb_search with query="CVE-XXXX-XXXXX"
+               - Search for related advisories: kb_search with query="RHSA component_name"
+               - Search for error messages: kb_search with error patterns
+               - Gather evidence from multiple sources
+               - **CRITICAL**: Always search KB after finding CVEs - this is required
+
+            3. IDENTIFY ROOT CAUSES:
+               - List all root causes with severity levels
+               - Include evidence (log excerpts, CVE references, KB articles)
+               - Document related CVE IDs for each issue
+               - Collect ALL KB article IDs (RHSA-*, solution IDs, etc.)
+
+            4. GENERATE REMEDIATION PLAN:
+               - Create ordered, actionable remediation steps
+               - Specify executor type for each step:
+                 * script: Bash commands/scripts
+                 * api: REST API calls
+                 * manual: Human intervention required
+                 * ansible: Ansible playbooks
+               - Include step details (commands, endpoints, procedures)
+               - Assign risk levels (low, medium, high)
+               - Mark steps requiring approval (true/false)
+               - Estimate total downtime
+               - Provide rollback plan for each risky step
+
+            5. FINALIZE DIAGNOSIS:
+               - Ensure all CVEs have corresponding KB searches
+               - Verify kb_articles_referenced is populated with ALL article IDs
+               - Example: ["RHSA-2025:22760", "320491", "CVE-2024-1234"]
+               - Double-check remediation steps are executable
+               - Validate rollback plan exists
+
+            OUTPUT FORMAT (JSON):
+            {
+              "root_causes": [
+                {
+                  "issue": "Description of the issue",
+                  "severity": "critical|high|medium|low",
+                  "evidence": "Log excerpts, CVE references, KB articles",
+                  "cve_ids": ["CVE-2024-1234", "CVE-2024-5678"]
+                }
+              ],
+              "remediation_steps": [
+                {
+                  "step_number": 1,
+                  "description": "Clear description of action",
+                  "executor_type": "script|api|manual|ansible",
+                  "details": {
+                    "command": "bash command here",
+                    "or": "API endpoint details",
+                    "or": "manual procedure"
+                  },
+                  "risk_level": "low|medium|high",
+                  "requires_approval": true|false
+                }
+              ],
+              "estimated_downtime": "5 minutes",
+              "rollback_plan": "Detailed rollback procedure",
+              "kb_articles_referenced": ["RHSA-2025:22760", "320491"]
+            }
+
+            IMPORTANT RULES:
+            - Be thorough - use ALL available tools
+            - **REQUIRED**: Search KB for every CVE found
+            - kb_articles_referenced must NEVER be empty if CVEs exist
+            - Include specific commands, not generic instructions
+            - Test your reasoning with multiple evidence sources
+            - Prioritize steps by impact and dependency order
+            - Mark high-risk steps for approval
+            - Provide rollback for destructive operations
+
+            The log content is available in context as 'logFileContent'.
+            Be systematic and exhaustive in your analysis.
+
+            When you're ready to provide your final diagnosis, output the complete JSON object in the format shown above. The downstream workflow will extract the JSON from your response.
 
     # Gateway - Valid Diagnostics?
     - id: element_6
@@ -233,6 +293,78 @@ process:
       properties:
         documentation: "Merge both approval paths - first to complete wins (either email or manual)"
 
+    # Script Task - Consolidate Decision from Either Path
+    - id: element_25
+      type: scriptTask
+      name: Consolidate Decision
+      x: 1430
+      y: 330
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        scriptFormat: "Python"
+        resultVariable: "approvalDecision"
+        documentation: "Extract decision from whichever approval path completed (manual or email)"
+        script: |
+          print('=== Consolidate Decision - Context Check ===')
+          print('Available context keys: ' + str(list(context.keys())))
+
+          # Check for diagnostic results (might be diagnosticResults or element_4_result)
+          diagnostic_results = None
+          if 'diagnosticResults' in context:
+              diagnostic_results = context.get('diagnosticResults')
+              print('Found diagnosticResults in context')
+          elif 'element_4_result' in context:
+              diagnostic_results = context.get('element_4_result')
+              print('Found element_4_result in context')
+          else:
+              print('WARNING: Neither diagnosticResults nor element_4_result found in context!')
+              print('Available keys: ' + str(list(context.keys())))
+
+          if diagnostic_results:
+              print('')
+              print('=== FULL DIAGNOSTIC RESULTS FROM ELEMENT_4 ===')
+              diag_str = str(diagnostic_results)
+              print(diag_str)
+              print('=== END DIAGNOSTIC RESULTS ===')
+              print('')
+
+              # Show structure
+              try:
+                  print('Diagnostic results keys: ' + str(list(diagnostic_results.keys())))
+                  if 'findings' in diagnostic_results:
+                      findings = diagnostic_results.get('findings')
+                      print('findings is a ' + str(len(findings)) + '-item array')
+                      if len(findings) > 0:
+                          print('findings[0] preview: ' + str(findings[0])[:500])
+                  if 'remediation_steps' in diagnostic_results:
+                      remediation = diagnostic_results.get('remediation_steps')
+                      print('remediation_steps preview: ' + str(remediation)[:500])
+              except:
+                  print('Cannot inspect diagnostic_results structure')
+
+          # Check which approval path completed
+          # Email approval merges payload directly into context
+          # Manual approval stores as element_7_decision
+
+          decision = 'approved'  # Default to approved
+
+          # Check manual approval path (element_7)
+          if 'element_7_decision' in context:
+              decision = context.get('element_7_decision', 'approved')
+              print('Decision from manual approval: ' + decision)
+
+          # Check email approval path (element_23)
+          # The receiveTask merges the webhook payload into context
+          elif 'decision' in context:
+              decision = context.get('decision', 'approved')
+              print('Decision from email approval: ' + decision)
+
+          print('Final consolidated decision: ' + decision)
+
+          # Set result
+          result = decision
+
     # Exclusive Gateway - Check Approval Decision
     - id: element_8
       type: exclusiveGateway
@@ -245,6 +377,100 @@ process:
         documentation: "Check if approved (from either path) or denied"
 
     # ===== AI GENERATION LANE - ANSIBLE PLAYBOOK =====
+
+    # Script Task - Extract Diagnostic JSON
+    - id: element_10_new
+      type: scriptTask
+      name: Extract Diagnostic JSON
+      x: 1030
+      y: 530
+      poolId: pool_1
+      laneId: lane_3
+      properties:
+        scriptFormat: "Python"
+        resultVariable: "cleanDiagnostics"
+        documentation: "Extract diagnostic JSON from element_4 wrapper for element_9 to consume"
+        script: |
+          import json
+
+          print('=== Extract Diagnostic JSON ===')
+          print('Available context keys: ' + str(list(context.keys())))
+
+          result = None
+
+          # Get diagnostic results from element_4
+          diagnostic_results = None
+          if 'diagnosticResults' in context:
+              diagnostic_results = context.get('diagnosticResults')
+              print('Found diagnosticResults in context')
+          elif 'element_4_result' in context:
+              diagnostic_results = context.get('element_4_result')
+              print('Found element_4_result in context')
+          else:
+              print('ERROR: No diagnostic results found in context!')
+
+          if diagnostic_results:
+              print('Diagnostic results type check...')
+              try:
+                  findings = diagnostic_results.get('findings')
+                  print('It is a dict with findings')
+
+                  if findings and len(findings) > 0:
+                      print('findings[0] length: ' + str(len(findings[0])))
+
+                      # findings[0] contains the LLM response (should be JSON, but may have extra text)
+                      llm_response = findings[0]
+
+                      # First, try to parse it directly as JSON (in case LLM followed strict instructions)
+                      try:
+                          parsed_json = json.loads(llm_response)
+                          print('Successfully parsed findings[0] as pure JSON!')
+                          print('Keys: ' + str(list(parsed_json.keys())))
+                          result = parsed_json
+                      except:
+                          print('findings[0] is not pure JSON, extracting JSON from text...')
+
+                          # Extract JSON from the LLM response
+                          # Look for the first opening brace
+                          start_idx = llm_response.find('{')
+
+                          if start_idx >= 0:
+                              # Find the matching closing brace by counting braces
+                              brace_count = 0
+                              end_idx = start_idx
+                              for i in range(start_idx, len(llm_response)):
+                                  if llm_response[i] == '{':
+                                      brace_count = brace_count + 1
+                                  elif llm_response[i] == '}':
+                                      brace_count = brace_count - 1
+                                      if brace_count == 0:
+                                          end_idx = i + 1
+                                          break
+
+                              json_str = llm_response[start_idx:end_idx]
+                              print('Extracted JSON string length: ' + str(len(json_str)))
+                              print('First 200 chars: ' + json_str[:200])
+
+                              # Parse the extracted JSON
+                              try:
+                                  parsed_json = json.loads(json_str)
+                                  print('Successfully parsed extracted JSON!')
+                                  print('Keys: ' + str(list(parsed_json.keys())))
+                                  result = parsed_json
+                              except:
+                                  print('ERROR: Failed to parse extracted JSON')
+                                  print('Extracted string preview: ' + json_str[:300])
+                                  result = None
+                          else:
+                              print('ERROR: Could not find opening brace in LLM response')
+                              print('Response preview: ' + llm_response[:500])
+                              result = None
+                  else:
+                      print('ERROR: findings array is empty')
+                      result = None
+              except:
+                  print('ERROR: diagnostic_results is not a dict or has no findings')
+                  result = None
 
     # Agentic Task 3 - Generate Ansible Playbook
     - id: element_9
@@ -261,8 +487,10 @@ process:
         confidenceThreshold: 0.9
         maxRetries: 2
         learningEnabled: true
+        resultVariable: "playbookContent"
         documentation: "Generate Ansible playbook from approved diagnostic steps"
         custom:
+          inputVariable: "cleanDiagnostics"
           mcpTools:
             - "ansible-validator"
             - "yaml-linter"
@@ -272,76 +500,294 @@ process:
           dryRunMode: "true"
           validationLevel: "strict"
           temperature: "0.1"
+          aguiEventCategories:
+            - "messaging"
+            - "tool"
+            - "lifecycle"
           systemPrompt: |
-            Generate production-ready Ansible playbooks following best practices:
-            1. Use proper YAML formatting
-            2. Include error handling and rollback
-            3. Make tasks idempotent
-            4. Add detailed comments
-            5. Include pre-flight checks
-            6. Validate with MCP tools
+            You are an Ansible playbook generator. You will receive diagnostic results from a log analysis and must create a production-ready Ansible playbook.
 
-    # Script Task - Validate Playbook
-    - id: element_10
-      type: scriptTask
-      name: Validate Syntax
-      x: 1350
-      y: 530
-      poolId: pool_1
-      laneId: lane_3
-      properties:
-        scriptFormat: "Python"
-        resultVariable: "validationResult"
-        documentation: "Validate Ansible playbook syntax and security (simplified for demo)"
-        script: |
-          # Simplified validation for demo purposes
-          # In production, this would validate YAML syntax and run ansible-lint
-          validationResult = {
-              'valid': True,
-              'message': 'Playbook validation passed (demo mode)'
-          }
+            Feel free to think through your playbook design, explain your remediation strategy, and reason about the best approach before generating the final playbook.
 
-    # Gateway - Playbook Valid?
-    - id: element_11
-      type: exclusiveGateway
-      name: Valid Playbook?
-      x: 1510
-      y: 530
-      poolId: pool_1
-      laneId: lane_3
-      properties:
-        documentation: "Check if generated playbook passes validation"
+            INPUT: The diagnostic results are available in the context as 'cleanDiagnostics'. The format will be a JSON object containing:
+            - root_causes: Array of issues found with severity, evidence, and CVE IDs
+            - remediation_steps: Array of remediation actions with executor type, details, and risk level
+            - estimated_downtime: String indicating expected downtime
+            - rollback_plan: String with rollback procedure
+            - kb_articles_referenced: Array of knowledge base article IDs
+
+            TASK: Analyze the diagnostic findings and CREATE a complete Ansible playbook that remediates ALL identified issues.
+
+            ANALYSIS STEPS:
+            1. Read the root_causes from cleanDiagnostics to understand:
+               - What vulnerabilities/issues were found (CVEs, security issues, DoS attacks, service failures, errors, etc.)
+               - Root causes and evidence from the diagnostic analysis
+               - Severity levels (critical, high, medium, low)
+               - Affected components (services, packages, configuration files, network settings, etc.)
+
+            2. Use the remediation_steps provided in cleanDiagnostics as the basis for your playbook
+               - Each remediation step has: description, executor_type, details, risk_level, requires_approval
+
+            3. Convert each remediation step into appropriate Ansible tasks:
+               - For CVE vulnerabilities: Update affected packages, apply security patches, restart services
+               - For DoS/malicious traffic: Block IPs with firewalld/iptables, add rate limiting, set timeouts
+               - For service failures: Restart services, fix configurations, enable health monitoring
+               - For resource exhaustion: Increase resource limits, optimize configs, add cleanup tasks
+               - For permission issues: Fix file/directory permissions, SELinux contexts
+               - For disk space issues: Clean logs, rotate files, expand storage
+               - For network issues: Update firewall rules, fix routing, restart network services
+               - For dependency issues: Install missing packages, update libraries
+
+            REMEDIATION STRATEGY:
+            - Extract specific details from findings: IPs, package names, service names, file paths, error codes
+            - Create tasks that address the ROOT CAUSE, not just symptoms
+            - Order tasks logically: prerequisites first, then fixes, then service restarts, then verification
+            - Use specific Ansible modules appropriate for the issue type
+            - Include rollback steps for risky operations
+
+            PLAYBOOK STRUCTURE REQUIREMENTS:
+            1. Use proper YAML formatting (Ansible 2.16 standard)
+            2. Include error handling with failed_when and block/rescue
+            3. Make all tasks idempotent (safe to run multiple times)
+            4. Add detailed comments explaining each task's purpose
+            5. Include gather_facts: yes for system information
+            6. Add rollback tasks in rescue blocks for destructive operations
+            7. Use appropriate Ansible modules (yum, dnf, apt, systemd, firewalld, iptables, lineinfile, copy, template, file, etc.)
+            8. Include clear task names that describe what each step does
+            9. Set appropriate become: yes/no for privilege escalation
+            10. Add tags for selective execution (critical, security, update, restart, config, etc.)
+            11. Use handlers for service restarts to avoid duplicate restarts
+            12. Add verification tasks to confirm remediation worked
+
+            COMMON ANSIBLE MODULES BY ISSUE TYPE:
+            - Package management: yum, dnf, apt, package
+            - Service management: systemd, service
+            - Firewall: firewalld, iptables
+            - File operations: copy, template, lineinfile, blockinfile, file
+            - SELinux: sefcontext, selinux
+            - Commands: command, shell (use sparingly, prefer modules)
+            - Verification: uri, wait_for, assert, stat
+
+            OUTPUT FORMAT:
+            When you're ready to provide your final playbook, output the complete Ansible playbook YAML starting with "---" and containing all tasks and handlers. The downstream workflow will extract the YAML from your response.
+
+            WRONG (DO NOT DO THIS):
+            {"analysis": "...", "findings": ["---\n- name: ..."], "model_used": "..."}
+
+            CORRECT (DO THIS):
+            ---
+            - name: Remediate Issues
+              hosts: all
+              become: yes
+              tasks:
+                - name: Fix issue
+                  module:
+                    param: value
+
+            EXAMPLE STRUCTURE (adapt to actual findings):
+            ---
+            - name: Remediate [Brief Description of Issues]
+              hosts: all
+              become: yes
+              gather_facts: yes
+
+              tasks:
+                - name: [Descriptive task name based on finding]
+                  [appropriate_module]:
+                    [parameters extracted from findings]
+                  tags:
+                    - [relevant tags: critical, security, etc.]
+                  register: result
+                  when: [optional condition]
+
+                - name: Handle risky operation with rollback
+                  block:
+                    - name: [Risky operation]
+                      [module]:
+                        [parameters]
+                  rescue:
+                    - name: Rollback changes
+                      [module]:
+                        [rollback parameters]
+
+                - name: Verify remediation success
+                  [verification_module]:
+                    [check parameters]
+                  tags:
+                    - verify
+
+              handlers:
+                - name: restart [service_name]
+                  systemd:
+                    name: [service_name]
+                    state: restarted
+
+            INSTRUCTIONS:
+            1. Parse the findings from diagnosticResults JSON
+            2. Identify all issues, their root causes, and affected components
+            3. Create specific, actionable tasks for each issue
+            4. Use actual values from findings (IPs, package versions, service names, file paths)
+            5. Ensure playbook is immediately executable
+            6. Return ONLY the YAML playbook, nothing else
 
     # ===== EXECUTION LANE =====
 
-    # Service Task - Store Playbook
+    # Script Task - Store Playbook
     - id: element_12
-      type: serviceTask
+      type: scriptTask
       name: Store Playbook
       x: 1670
       y: 530
       poolId: pool_1
       laneId: lane_3
       properties:
-        implementation: "External"
-        topic: "artifact-storage"
-        resultVariable: "playbookUrl"
-        documentation: "Store validated playbook in artifact repository"
-        custom:
-          repository: "ansible-playbooks"
-          versionControl: "git"
-          branch: "automated-remediation"
+        scriptFormat: "Python"
+        resultVariable: "playbookPath"
+        documentation: "Store validated playbook in /tmp/playbooks directory"
+        script: |
+          import os
+          from datetime import datetime
 
-    # Manual Task - Execute Playbook
-    - id: element_13
-      type: manualTask
-      name: Execute on Target Systems
-      x: 1830
-      y: 530
-      poolId: pool_1
-      laneId: lane_3
-      properties:
-        documentation: "DevOps team executes playbook on target infrastructure"
+          print('=== Store Playbook - Context Check ===')
+          print('Available context keys: ' + str(list(context.keys())))
+
+          result = None  # Initialize result
+
+          # Try multiple possible keys for playbook content
+          raw_content = None
+          if 'playbookContent' in context:
+              raw_content = context.get('playbookContent')
+              print('Found playbookContent in context')
+          elif 'element_9_result' in context:
+              raw_content = context.get('element_9_result')
+              print('Found element_9_result in context')
+          else:
+              error_msg = 'ERROR: Neither playbookContent nor element_9_result found in context!'
+              print(error_msg)
+              result = None
+
+          if raw_content is not None:
+              # Extract actual playbook from wrapped result
+              playbook_content = None
+
+              # Debug: Show the FULL structure
+              print('')
+              print('=== FULL ELEMENT_9 OUTPUT (Ansible Playbook Generator) ===')
+              print('Type check: is it a dict?')
+              try:
+                  test_dict = raw_content.get('test')
+                  print('YES - it is a dict (get() method worked)')
+              except:
+                  print('NO - it is not a dict (get() method failed)')
+
+              print('')
+              print('Raw content as string (first 1000 chars):')
+              print(str(raw_content)[:1000])
+              print('')
+              print('=== END ELEMENT_9 OUTPUT ===')
+              print('')
+
+              # Debug: Show the structure
+              try:
+                  print('Raw content keys: ' + str(list(raw_content.keys())))
+              except:
+                  print('Raw content has no keys() method')
+
+              # Try to extract from findings array (executor wrapper)
+              try:
+                  # Check if there's a 'playbook' field directly
+                  if 'playbook' in raw_content:
+                      playbook_content = str(raw_content.get('playbook'))
+                      print('Found playbook in raw_content["playbook"]')
+                  # Otherwise check findings array
+                  elif 'findings' in raw_content:
+                      findings = raw_content.get('findings')
+                      if findings and len(findings) > 0:
+                          print('Found findings array with ' + str(len(findings)) + ' items')
+                          # Check if findings[0] is a string (the playbook) or dict (parsed data)
+                          first_finding = findings[0]
+                          first_str = str(first_finding)
+                          if first_str.strip().startswith('---'):
+                              # It's YAML
+                              playbook_content = first_str
+                              print('Extracted YAML playbook from findings[0]')
+                          elif first_str.strip().startswith('{'):
+                              # It's a dict - the playbook might be in another field
+                              print('findings[0] is a dict, not the playbook')
+                              print('Searching for playbook in other fields...')
+                              # Try to find the playbook elsewhere
+                              for key in raw_content.keys():
+                                  val = raw_content.get(key)
+                                  val_str = str(val)
+                                  if val_str.strip().startswith('---'):
+                                      playbook_content = val_str
+                                      print('Found YAML playbook in raw_content["' + key + '"]')
+                                      break
+                          else:
+                              playbook_content = first_str
+                              print('Using findings[0] as-is')
+                      else:
+                          print('No findings array, using raw_content as-is')
+                          playbook_content = str(raw_content)
+                  else:
+                      print('No playbook or findings field, using raw_content as-is')
+                      playbook_content = str(raw_content)
+              except:
+                  print('Error during extraction, using raw_content as-is')
+                  playbook_content = str(raw_content)
+
+              if playbook_content:
+                  content_str = str(playbook_content)
+                  content_len = len(content_str)
+
+                  # Validate content is not empty
+                  if content_str.strip():
+                      print('Playbook content length: ' + str(content_len) + ' characters')
+
+                      # Verify it's YAML not JSON
+                      if content_str.strip().startswith('{'):
+                          print('ERROR: Extracted playbook still starts with { - extraction failed!')
+                          print('Content preview: ' + content_str[:200])
+                      elif not content_str.strip().startswith('---'):
+                          print('WARNING: Playbook does not start with --- marker')
+                          print('First 100 chars: ' + content_str.strip()[:100])
+
+                      print('Playbook preview (first 500 chars):')
+                      print(content_str[:500] + '...' if content_len > 500 else content_str)
+
+                      # Create directory if it doesn't exist
+                      playbook_dir = '/tmp/playbooks'
+                      os.makedirs(playbook_dir, exist_ok=True)
+                      print('Playbook directory: ' + playbook_dir)
+
+                      # Generate filename with timestamp
+                      timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                      filename = 'remediation_' + timestamp + '.yml'
+                      file_path = os.path.join(playbook_dir, filename)
+
+                      # Write playbook to file
+                      with open(file_path, 'w') as f:
+                          bytes_written = f.write(content_str)
+
+                      print('Playbook stored at: ' + file_path)
+                      print('Bytes written: ' + str(bytes_written))
+
+                      # Verify file was written
+                      file_size = os.path.getsize(file_path)
+                      print('File size on disk: ' + str(file_size) + ' bytes')
+
+                      if file_size > 0:
+                          result = file_path
+                          print('SUCCESS: Playbook saved successfully')
+                      else:
+                          print('ERROR: File was created but is empty!')
+                          result = None
+                  else:
+                      print('ERROR: Playbook content is empty after extraction!')
+                      result = None
+              else:
+                  print('ERROR: Failed to extract playbook content!')
+                  result = None
 
     # Send Task - Notification
     - id: element_14
@@ -362,10 +808,9 @@ process:
           - Log file: ${logFileName}
           - Issues found: ${issueCount}
           - Approval method: ${approvalMethod}
-          - Ansible playbook: ${playbookUrl}
-          - Execution status: ${executionStatus}
+          - Ansible playbook saved at: ${playbookPath}
 
-          The system has been remediated according to the approved diagnostic steps.
+          The Ansible playbook has been generated and saved. You can review and execute it manually when ready.
         documentation: "Notify stakeholders of successful completion"
 
     # End Event - Success
@@ -432,21 +877,6 @@ process:
       properties:
         documentation: "User rejected the diagnostic steps via either approval path"
 
-    # Service Task - Regenerate Playbook
-    - id: element_20
-      type: serviceTask
-      name: Fix & Regenerate
-      x: 1510
-      y: 650
-      poolId: pool_1
-      laneId: lane_3
-      properties:
-        implementation: "External"
-        topic: "playbook-regeneration"
-        documentation: "Attempt to fix validation errors and regenerate"
-        custom:
-          maxAttempts: "2"
-
   connections:
     # Main happy path
     - id: conn_1
@@ -457,26 +887,14 @@ process:
 
     - id: conn_2
       type: sequenceFlow
-      name: ""
+      name: "file uploaded"
       from: element_2
-      to: element_3
-
-    - id: conn_3
-      type: sequenceFlow
-      name: "stored"
-      from: element_3
       to: element_4
 
     - id: conn_4
       type: sequenceFlow
       name: ""
       from: element_4
-      to: element_5
-
-    - id: conn_5
-      type: sequenceFlow
-      name: ""
-      from: element_5
       to: element_6
 
     # Valid diagnostics path - send for dual approval (default path)
@@ -539,23 +957,21 @@ process:
       from: element_7
       to: element_24
 
-    # Merge to decision gateway
+    # Merge to consolidation script
     - id: conn_25
       type: sequenceFlow
       name: "first to complete"
       from: element_24
+      to: element_25
+
+    # Consolidation to decision gateway
+    - id: conn_26
+      type: sequenceFlow
+      name: ""
+      from: element_25
       to: element_8
 
-    # Approved - generate playbook (default path)
-    - id: conn_10
-      type: sequenceFlow
-      name: "approved"
-      from: element_8
-      to: element_9
-      properties:
-        condition: ""
-
-    # Rejected - notify and end
+    # Rejected - notify and end (check this FIRST)
     - id: conn_11
       type: sequenceFlow
       name: "rejected"
@@ -564,61 +980,40 @@ process:
       properties:
         condition: "${approvalDecision} == 'rejected'"
 
+    # Approved - extract diagnostics first (default path - checked LAST)
+    - id: conn_10
+      type: sequenceFlow
+      name: "approved"
+      from: element_8
+      to: element_10_new
+      properties:
+        condition: ""
+
+    # Extract diagnostics to playbook generator
+    - id: conn_10a
+      type: sequenceFlow
+      name: ""
+      from: element_10_new
+      to: element_9
+
     - id: conn_12
       type: sequenceFlow
       name: ""
       from: element_18
       to: element_19
 
-    # Playbook generation and validation
+    # Playbook generation and storage
     - id: conn_13
       type: sequenceFlow
       name: ""
       from: element_9
-      to: element_10
-
-    - id: conn_14
-      type: sequenceFlow
-      name: ""
-      from: element_10
-      to: element_11
-
-    # Valid playbook - execute (default path)
-    - id: conn_15
-      type: sequenceFlow
-      name: "valid"
-      from: element_11
       to: element_12
-      properties:
-        condition: ""
 
-    # Invalid playbook - try to fix
-    - id: conn_16
-      type: sequenceFlow
-      name: "validation failed"
-      from: element_11
-      to: element_20
-      properties:
-        condition: "${validationResult.valid} == false"
-
-    # Retry playbook generation
-    - id: conn_17
-      type: sequenceFlow
-      name: "retry"
-      from: element_20
-      to: element_9
-
-    # Store and execute
+    # Store playbook and notify
     - id: conn_18
       type: sequenceFlow
       name: ""
       from: element_12
-      to: element_13
-
-    - id: conn_19
-      type: sequenceFlow
-      name: ""
-      from: element_13
       to: element_14
 
     - id: conn_20

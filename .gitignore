@@ -79,6 +79,10 @@ mcp_servers/__pycache__/
 backend/credentials.json
 backend/token.json
 
+# Context examples with personal email addresses (NEVER commit these!)
+context-examples/*.json
+!context-examples/minimal-test.json
+
 # Python type checking
 .mypy_cache/
 .dmypy.json

@@ -2,7 +2,7 @@
 BPMN Workflow Data Models
 """
 from typing import List, Dict, Any, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from datetime import datetime
 from enum import Enum
 
@@ -12,6 +12,11 @@ class ElementType(str, Enum):
     START_EVENT = "startEvent"
     END_EVENT = "endEvent"
     INTERMEDIATE_EVENT = "intermediateEvent"
+    TIMER_INTERMEDIATE_CATCH_EVENT = "timerIntermediateCatchEvent"
+    ERROR_BOUNDARY_EVENT = "errorBoundaryEvent"
+    TIMER_BOUNDARY_EVENT = "timerBoundaryEvent"
+    ESCALATION_BOUNDARY_EVENT = "escalationBoundaryEvent"
+    SIGNAL_BOUNDARY_EVENT = "signalBoundaryEvent"
     TASK = "task"
     USER_TASK = "userTask"
     SERVICE_TASK = "serviceTask"
@@ -70,6 +75,7 @@ class Element(BaseModel):
     y: int
     poolId: Optional[str] = None
     laneId: Optional[str] = None
+    attachedToRef: Optional[str] = None  # For boundary events - references parent task
     properties: Dict[str, Any] = Field(default_factory=dict)
     expanded: Optional[bool] = None
     width: Optional[int] = None
@@ -125,11 +131,14 @@ class Connection(BaseModel):
 
 class Process(BaseModel):
     """BPMN process definition"""
+    model_config = ConfigDict(populate_by_name=True)
+
     id: str
     name: str
     pools: List[Pool] = []
     elements: List[Element] = []
     connections: List[Connection] = []
+    subprocess_definitions: List[Dict[str, Any]] = Field(default_factory=list, alias='subProcessDefinitions')
 
 
 class Workflow(BaseModel):

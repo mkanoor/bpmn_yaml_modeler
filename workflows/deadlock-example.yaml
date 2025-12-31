@@ -1,0 +1,238 @@
+process:
+  id: process_1
+  name: Error Boundary Event Example (Fixed Deadlock)
+
+  pools:
+    - id: pool_1
+      name: Error Recovery with Boundary Events
+      x: 50
+      y: 50
+      width: 1800
+      height: 600
+      lanes:
+        - id: lane_1
+          name: Parallel Processing with Error Handling
+          height: 600
+
+  elements:
+    # Start Event
+    - id: start_1
+      type: startEvent
+      name: Start
+      x: 100
+      y: 250
+      poolId: pool_1
+      laneId: lane_1
+      properties: {}
+
+    # Parallel Gateway - Fork into 3 paths
+    - id: fork_gateway
+      type: parallelGateway
+      name: Fork into 3 Paths
+      x: 250
+      y: 250
+      poolId: pool_1
+      laneId: lane_1
+      properties: {}
+
+    # PATH 1 - Top (will complete)
+    - id: task_path1
+      type: scriptTask
+      name: Path 1 - Quick Task
+      x: 400
+      y: 150
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        scriptFormat: Python
+        resultVariable: path1Result
+        script: |
+          import time
+          print("🔵 Path 1: Starting quick task")
+          time.sleep(1)
+          print("🔵 Path 1: Completed!")
+          result = {'path': 1, 'status': 'completed'}
+
+    # PATH 2 - Middle (will complete)
+    - id: task_path2
+      type: scriptTask
+      name: Path 2 - Medium Task
+      x: 400
+      y: 250
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        scriptFormat: Python
+        resultVariable: path2Result
+        script: |
+          import time
+          print("🔴 Path 2: Starting medium task")
+          time.sleep(2)
+          print("🔴 Path 2: Completed!")
+          result = {'path': 2, 'status': 'completed'}
+
+    # PATH 3 - Bottom (will FAIL but error boundary will catch it)
+    - id: task_path3_fail
+      type: scriptTask
+      name: Path 3 - FAILING Task
+      x: 400
+      y: 350
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        scriptFormat: Python
+        resultVariable: path3Result
+        script: |
+          import time
+          print("🟢 Path 3: Starting task that will fail...")
+          time.sleep(1)
+          print("🟢 Path 3: ERROR - Simulating failure!")
+          # Simulate failure by dividing by zero
+          x = 1 / 0
+          result = {'path': 3, 'status': 'should_never_reach_here'}
+
+    # Error Boundary Event - catches the error from task_path3_fail
+    - id: error_boundary
+      type: errorBoundaryEvent
+      name: Catch Error
+      x: 455
+      y: 375
+      poolId: pool_1
+      laneId: lane_1
+      attachedToRef: task_path3_fail
+      properties:
+        errorCode: ""  # Catch all errors
+        cancelActivity: true  # Stop the failing task
+
+    # Error handling task - processes the error then continues to join
+    - id: error_handler
+      type: scriptTask
+      name: Handle Error & Continue
+      x: 550
+      y: 450
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        scriptFormat: Python
+        resultVariable: errorHandled
+        script: |
+          print("⚠️ Error handler: Path 3 failed, logging error...")
+          print("⚠️ NOW sending token to join gateway - NO DEADLOCK!")
+          result = {'error': 'handled', 'path3': 'recovered'}
+
+
+    # Parallel Gateway - Join (NO DEADLOCK - all 3 tokens will arrive)
+    - id: join_gateway
+      type: parallelGateway
+      name: Join All Paths (Success!)
+      x: 700
+      y: 200
+      poolId: pool_1
+      laneId: lane_1
+      properties: {}
+
+    # Task after join (will now execute successfully)
+    - id: final_task
+      type: scriptTask
+      name: Final Task (Success!)
+      x: 850
+      y: 200
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        scriptFormat: Python
+        resultVariable: finalResult
+        script: |
+          print("✅ Final task: All paths completed (including error recovery)!")
+          result = {'status': 'all_complete_with_recovery'}
+
+    # End Event
+    - id: end_1
+      type: endEvent
+      name: Success End
+      x: 1000
+      y: 200
+      poolId: pool_1
+      laneId: lane_1
+      properties: {}
+
+  connections:
+    # Start to Fork
+    - id: conn_1
+      type: sequenceFlow
+      name: ""
+      from: start_1
+      to: fork_gateway
+      properties: {}
+
+    # Fork to Path 1
+    - id: conn_2
+      type: sequenceFlow
+      name: "Path 1"
+      from: fork_gateway
+      to: task_path1
+      properties: {}
+
+    # Fork to Path 2
+    - id: conn_3
+      type: sequenceFlow
+      name: "Path 2"
+      from: fork_gateway
+      to: task_path2
+      properties: {}
+
+    # Fork to Path 3
+    - id: conn_4
+      type: sequenceFlow
+      name: "Path 3"
+      from: fork_gateway
+      to: task_path3_fail
+      properties: {}
+
+    # Path 1 to Join
+    - id: conn_5
+      type: sequenceFlow
+      name: ""
+      from: task_path1
+      to: join_gateway
+      properties: {}
+
+    # Path 2 to Join
+    - id: conn_6
+      type: sequenceFlow
+      name: ""
+      from: task_path2
+      to: join_gateway
+      properties: {}
+
+    # Error Boundary to Error Handler (triggered when task fails)
+    - id: conn_7
+      type: sequenceFlow
+      name: "Error Caught"
+      from: error_boundary
+      to: error_handler
+      properties: {}
+
+    # Error Handler to Join (recovery path - sends token to join gateway)
+    - id: conn_8
+      type: sequenceFlow
+      name: "Recovered"
+      from: error_handler
+      to: join_gateway
+      properties: {}
+
+    # Join to Final Task (now works - no deadlock!)
+    - id: conn_9
+      type: sequenceFlow
+      name: "All Paths Joined"
+      from: join_gateway
+      to: final_task
+      properties: {}
+
+    # Final Task to End
+    - id: conn_10
+      type: sequenceFlow
+      name: ""
+      from: final_task
+      to: end_1
+      properties: {}

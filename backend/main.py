@@ -3,10 +3,13 @@ FastAPI Application - BPMN Workflow Execution Server
 """
 import asyncio
 import logging
+import os
 from datetime import datetime, timezone
+from pathlib import Path
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from typing import Dict, Any
 import uvicorn
 
@@ -14,6 +17,7 @@ from agui_server import AGUIServer
 from workflow_engine import WorkflowEngine, execute_workflow_from_file
 from models import Workflow
 from message_queue import get_message_queue
+from mcp_client import MCPClient, create_default_mcp_client, initialize_mcp_servers
 
 # Configure logging
 logging.basicConfig(
@@ -37,19 +41,49 @@ app.add_middleware(
 # Global AG-UI server instance
 agui_server = AGUIServer()
 
+# Global MCP client instance (will be initialized at startup)
+mcp_client: MCPClient = None
+
 # Active workflow instances
 active_workflows: Dict[str, WorkflowEngine] = {}
 
+# Get the parent directory (project root)
+BASE_DIR = Path(__file__).resolve().parent.parent
 
-@app.get("/")
-async def root():
-    """Health check endpoint"""
-    return {
-        "status": "running",
-        "service": "BPMN Workflow Execution Engine",
-        "version": "1.0.0",
-        "active_workflows": len(active_workflows)
-    }
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize MCP client on startup"""
+    global mcp_client
+
+    try:
+        logger.info("🚀 Initializing MCP client...")
+        mcp_client = create_default_mcp_client()
+        await initialize_mcp_servers(mcp_client)
+        logger.info("✅ MCP client initialized successfully")
+
+        # Log available tools
+        tools = await mcp_client.list_tools()
+        logger.info(f"📋 Available MCP tools: {', '.join(tools)}")
+
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize MCP client: {e}")
+        logger.warning("⚠️ Workflows will run without MCP tool support")
+        mcp_client = None
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Shutdown MCP client"""
+    global mcp_client
+
+    if mcp_client:
+        try:
+            logger.info("🛑 Shutting down MCP client...")
+            await mcp_client.shutdown()
+            logger.info("✅ MCP client shut down successfully")
+        except Exception as e:
+            logger.error(f"❌ Error during MCP client shutdown: {e}")
 
 
 @app.get("/health")
@@ -57,7 +91,9 @@ async def health():
     """Health check"""
     return {
         "status": "healthy",
-        "connected_clients": len(agui_server.clients)
+        "connected_clients": len(agui_server.clients),
+        "mcp_enabled": mcp_client is not None,
+        "mcp_tools": await mcp_client.list_tools() if mcp_client else []
     }
 
 
@@ -71,11 +107,12 @@ async def websocket_endpoint(websocket: WebSocket):
 @app.post("/workflows/execute")
 async def execute_workflow(workflow_data: Dict[str, Any]):
     """
-    Execute a workflow from YAML data
+    Execute a workflow from YAML data or file path
 
     Request body:
     {
-        "yaml": "workflow YAML content",
+        "yaml": "workflow YAML content",  // OR
+        "workflowFile": "path/to/workflow.yaml",  // file path
         "context": {
             "variable1": "value1",
             "variable2": "value2"
@@ -84,13 +121,20 @@ async def execute_workflow(workflow_data: Dict[str, Any]):
     """
     try:
         yaml_content = workflow_data.get('yaml')
+        workflow_file = workflow_data.get('workflowFile')
         context = workflow_data.get('context', {})
 
-        if not yaml_content:
-            raise HTTPException(status_code=400, detail="Missing 'yaml' in request")
+        # Load from file if workflowFile provided
+        if workflow_file and not yaml_content:
+            logger.info(f"Loading workflow from file: {workflow_file}")
+            with open(workflow_file, 'r') as f:
+                yaml_content = f.read()
 
-        # Create workflow engine
-        engine = WorkflowEngine(yaml_content, agui_server)
+        if not yaml_content:
+            raise HTTPException(status_code=400, detail="Missing 'yaml' or 'workflowFile' in request")
+
+        # Create workflow engine with filename for logging and MCP client
+        engine = WorkflowEngine(yaml_content, agui_server, mcp_client=mcp_client, workflow_file=workflow_file)
 
         # Store instance
         instance_id = None
@@ -137,8 +181,8 @@ async def execute_workflow_file(file: UploadFile = File(...), context: Dict[str,
         yaml_content = await file.read()
         yaml_str = yaml_content.decode('utf-8')
 
-        # Create workflow engine
-        engine = WorkflowEngine(yaml_str, agui_server)
+        # Create workflow engine with filename for logging and MCP client
+        engine = WorkflowEngine(yaml_str, agui_server, mcp_client=mcp_client, workflow_file=file.filename)
 
         # Start execution in background
         async def execute():
@@ -754,6 +798,66 @@ async def deny_via_email(message_ref: str, correlation_key: str):
     except Exception as e:
         logger.error(f"Error processing email denial: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ========================================
+# Static File Serving (must be at the end!)
+# ========================================
+
+@app.get("/")
+async def root():
+    """Serve the main UI (index.html)"""
+    index_path = BASE_DIR / "index.html"
+    if index_path.exists():
+        return FileResponse(str(index_path), media_type="text/html")
+    else:
+        # Fallback to API info if index.html not found
+        return {
+            "status": "running",
+            "service": "BPMN Workflow Execution Engine",
+            "version": "1.0.0",
+            "active_workflows": len(active_workflows),
+            "note": "index.html not found - UI not available"
+        }
+
+
+@app.get("/{file_path:path}")
+async def serve_static(file_path: str):
+    """Serve static files (CSS, JS, images) from project root
+
+    This must be the LAST route defined to act as a catch-all.
+    """
+    # Skip if it looks like an API endpoint
+    if file_path.startswith(("api/", "workflows/", "webhooks/", "ws", "health")):
+        raise HTTPException(status_code=404, detail="API endpoint not found")
+
+    static_file_path = BASE_DIR / file_path
+
+    # Security check - prevent directory traversal
+    try:
+        static_file_path = static_file_path.resolve()
+        base_resolved = BASE_DIR.resolve()
+
+        # Ensure the resolved path is within BASE_DIR
+        if not str(static_file_path).startswith(str(base_resolved)):
+            raise HTTPException(status_code=403, detail="Access forbidden")
+    except Exception as e:
+        logger.warning(f"Error resolving path {file_path}: {e}")
+        raise HTTPException(status_code=404, detail="File not found")
+
+    # Serve the file if it exists
+    if static_file_path.is_file():
+        # Determine media type based on file extension
+        import mimetypes
+        media_type, _ = mimetypes.guess_type(str(static_file_path))
+
+        return FileResponse(
+            str(static_file_path),
+            media_type=media_type or "application/octet-stream"
+        )
+
+    # File not found
+    raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
 
 
 if __name__ == "__main__":

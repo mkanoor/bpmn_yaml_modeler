@@ -1,0 +1,480 @@
+process:
+  id: process_1
+  name: Conditional Approval Workflow with Gateways
+
+  # Subprocess Definitions
+  subProcessDefinitions:
+    - id: email_approval_subprocess
+      name: Email Approval Subprocess
+      elements:
+        - id: sp_start
+          type: startEvent
+          name: Start
+          x: 100
+          y: 200
+          properties: {}
+
+        - id: sp_send
+          type: sendTask
+          name: Send Approval Email
+          x: 250
+          y: 200
+          properties:
+            messageType: Email
+            to: "${approverEmail}"
+            subject: "Approval Required: ${requestTitle}"
+            messageBody: |
+              Please review and approve the following request.
+
+              Title: ${requestTitle}
+              Details: ${requestDetails}
+              Requester: ${requesterName}
+              Priority: ${requestPriority}
+
+              Click below to approve or deny:
+            useGmail: true
+            htmlFormat: true
+            includeApprovalLinks: true
+            approvalMessageRef: approvalRequest
+            approvalCorrelationKey: "${workflowInstanceId}-${taskId}"
+
+        - id: sp_receive
+          type: receiveTask
+          name: Await Response
+          x: 450
+          y: 200
+          properties:
+            messageRef: approvalRequest
+            correlationKey: "${workflowInstanceId}-${taskId}"
+            timeout: "3600000"
+            useWebhook: true
+
+        - id: sp_script
+          type: scriptTask
+          name: Process Decision
+          x: 600
+          y: 200
+          properties:
+            scriptFormat: Python
+            resultVariable: approvalResult
+            script: |
+              # Process the approval decision
+              decision_value = context.get('decision', 'pending')
+              approver = context.get('approver', 'unknown')
+              timestamp = context.get('timestamp', '')
+
+              result = {
+                  'approved': decision_value == 'approved',
+                  'decision': decision_value,
+                  'approvedBy': approver,
+                  'approvalTimestamp': timestamp,
+                  'comments': context.get('comments', '')
+              }
+
+        - id: sp_end
+          type: endEvent
+          name: End
+          x: 750
+          y: 200
+          properties: {}
+
+      connections:
+        - id: sp_conn1
+          type: sequenceFlow
+          name: ""
+          from: sp_start
+          to: sp_send
+          properties: {}
+
+        - id: sp_conn2
+          type: sequenceFlow
+          name: ""
+          from: sp_send
+          to: sp_receive
+          properties: {}
+
+        - id: sp_conn3
+          type: sequenceFlow
+          name: ""
+          from: sp_receive
+          to: sp_script
+          properties: {}
+
+        - id: sp_conn4
+          type: sequenceFlow
+          name: ""
+          from: sp_script
+          to: sp_end
+          properties: {}
+
+  # Main Process
+  pools:
+    - id: pool_1
+      name: Conditional Approval Process
+      x: 50
+      y: 50
+      width: 2200
+      height: 600
+      lanes:
+        - id: lane_1
+          name: Request Processing
+          height: 600
+
+  elements:
+    # Start Event
+    - id: element_1
+      type: startEvent
+      name: Start
+      x: 120
+      y: 250
+      poolId: pool_1
+      laneId: lane_1
+      properties: {}
+
+    # Prepare Budget Request
+    - id: element_2
+      type: scriptTask
+      name: Prepare Budget Request
+      x: 250
+      y: 250
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        scriptFormat: Python
+        resultVariable: budgetRequest
+        script: |
+          # Get approver from context or use default
+          budget_approver = context.get('budgetApprover', 'manager@example.com')
+
+          result = {
+              'type': 'budget',
+              'title': 'Q1 2024 Marketing Budget',
+              'details': 'Requesting $50,000 for digital marketing campaigns',
+              'amount': 50000,
+              'requester': {
+                  'name': 'Alice Johnson',
+                  'email': 'alice@example.com',
+                  'department': 'Marketing'
+              },
+              'priority': 'high',
+              'approver': budget_approver
+          }
+
+    # Budget Approval Call Activity
+    - id: element_3
+      type: callActivity
+      name: Budget Approval
+      x: 450
+      y: 250
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        calledElement: email_approval_subprocess
+        inheritVariables: false
+        inputMappings:
+          - source: budgetRequest.title
+            target: requestTitle
+          - source: budgetRequest.details
+            target: requestDetails
+          - source: budgetRequest.requester.name
+            target: requesterName
+          - source: budgetRequest.priority
+            target: requestPriority
+          - source: budgetRequest.approver
+            target: approverEmail
+        outputMappings:
+          - source: approvalResult
+            target: budgetApprovalResult
+
+    # Gateway: Check Budget Approval
+    - id: element_4
+      type: exclusiveGateway
+      name: Budget Approved?
+      x: 650
+      y: 250
+      poolId: pool_1
+      laneId: lane_1
+      properties: {}
+
+    # Budget Denied Path - Send Denial Notification
+    - id: element_5
+      type: scriptTask
+      name: Handle Budget Denial
+      x: 800
+      y: 150
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        scriptFormat: Python
+        resultVariable: budgetDenialHandled
+        script: |
+          approval = context.get('budgetApprovalResult', {})
+          print(f"❌ Budget request DENIED")
+          print(f"Denied by: {approval.get('approvedBy')}")
+          print(f"Reason: {approval.get('comments', 'No reason provided')}")
+
+          result = {
+              'status': 'denied',
+              'deniedBy': approval.get('approvedBy'),
+              'timestamp': approval.get('approvalTimestamp'),
+              'reason': approval.get('comments', 'No reason provided')
+          }
+
+    # Budget Denied End Event
+    - id: element_6
+      type: endEvent
+      name: Budget Denied
+      x: 1000
+      y: 150
+      poolId: pool_1
+      laneId: lane_1
+      properties: {}
+
+    # Budget Approved Path - Continue to HR
+    - id: element_7
+      type: scriptTask
+      name: Prepare HR Request
+      x: 800
+      y: 350
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        scriptFormat: Python
+        resultVariable: hrRequest
+        script: |
+          approval = context.get('budgetApprovalResult', {})
+          print(f"✅ Budget request APPROVED")
+          print(f"Approved by: {approval.get('approvedBy')}")
+
+          # Get HR approver from context or use default
+          hr_approver = context.get('hrApprover', 'hr-director@example.com')
+
+          result = {
+              'type': 'hr',
+              'title': 'New Hire Request - Senior Developer',
+              'details': 'Requesting approval to hire a senior full-stack developer',
+              'salary': 120000,
+              'requester': {
+                  'name': 'Bob Smith',
+                  'email': 'bob@example.com',
+                  'department': 'Engineering'
+              },
+              'priority': 'medium',
+              'approver': hr_approver
+          }
+
+    # HR Approval Call Activity
+    - id: element_8
+      type: callActivity
+      name: HR Approval
+      x: 1000
+      y: 350
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        calledElement: email_approval_subprocess
+        inheritVariables: false
+        inputMappings:
+          - source: hrRequest.title
+            target: requestTitle
+          - source: hrRequest.details
+            target: requestDetails
+          - source: hrRequest.requester.name
+            target: requesterName
+          - source: hrRequest.priority
+            target: requestPriority
+          - source: hrRequest.approver
+            target: approverEmail
+        outputMappings:
+          - source: approvalResult
+            target: hrApprovalResult
+
+    # Gateway: Check HR Approval
+    - id: element_9
+      type: exclusiveGateway
+      name: HR Approved?
+      x: 1200
+      y: 350
+      poolId: pool_1
+      laneId: lane_1
+      properties: {}
+
+    # HR Denied Path
+    - id: element_10
+      type: scriptTask
+      name: Handle HR Denial
+      x: 1350
+      y: 250
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        scriptFormat: Python
+        resultVariable: hrDenialHandled
+        script: |
+          approval = context.get('hrApprovalResult', {})
+          print(f"❌ HR request DENIED")
+          print(f"Denied by: {approval.get('approvedBy')}")
+          print(f"Reason: {approval.get('comments', 'No reason provided')}")
+
+          result = {
+              'status': 'denied',
+              'deniedBy': approval.get('approvedBy'),
+              'timestamp': approval.get('approvalTimestamp'),
+              'reason': approval.get('comments', 'No reason provided')
+          }
+
+    # HR Denied End Event
+    - id: element_11
+      type: endEvent
+      name: HR Denied
+      x: 1550
+      y: 250
+      poolId: pool_1
+      laneId: lane_1
+      properties: {}
+
+    # Both Approved Path
+    - id: element_12
+      type: scriptTask
+      name: Generate Success Summary
+      x: 1350
+      y: 450
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        scriptFormat: Python
+        resultVariable: finalSummary
+        script: |
+          budget = context.get('budgetApprovalResult', {})
+          hr = context.get('hrApprovalResult', {})
+
+          print(f"")
+          print(f"🎉 ========================================")
+          print(f"🎉 ALL APPROVALS SUCCESSFUL!")
+          print(f"🎉 ========================================")
+          print(f"")
+          print(f"✅ Budget Approval:")
+          print(f"   Approved by: {budget.get('approvedBy')}")
+          print(f"   Timestamp: {budget.get('approvalTimestamp')}")
+          print(f"")
+          print(f"✅ HR Approval:")
+          print(f"   Approved by: {hr.get('approvedBy')}")
+          print(f"   Timestamp: {hr.get('approvalTimestamp')}")
+          print(f"")
+
+          result = {
+              'status': 'all_approved',
+              'budgetApproval': budget,
+              'hrApproval': hr
+          }
+
+    # Success End Event
+    - id: element_13
+      type: endEvent
+      name: All Approved
+      x: 1550
+      y: 450
+      poolId: pool_1
+      laneId: lane_1
+      properties: {}
+
+  connections:
+    # Start to Prepare Budget
+    - id: conn_1
+      type: sequenceFlow
+      name: ""
+      from: element_1
+      to: element_2
+      properties: {}
+
+    # Prepare Budget to Budget Approval
+    - id: conn_2
+      type: sequenceFlow
+      name: ""
+      from: element_2
+      to: element_3
+      properties: {}
+
+    # Budget Approval to Gateway
+    - id: conn_3
+      type: sequenceFlow
+      name: ""
+      from: element_3
+      to: element_4
+      properties: {}
+
+    # Gateway to Budget Denied (condition: not approved)
+    - id: conn_4
+      type: sequenceFlow
+      name: "Denied"
+      from: element_4
+      to: element_5
+      properties:
+        condition: "budgetApprovalResult['approved'] == False"
+
+    # Budget Denied to End
+    - id: conn_5
+      type: sequenceFlow
+      name: ""
+      from: element_5
+      to: element_6
+      properties: {}
+
+    # Gateway to Prepare HR (condition: approved)
+    - id: conn_6
+      type: sequenceFlow
+      name: "Approved"
+      from: element_4
+      to: element_7
+      properties:
+        condition: "budgetApprovalResult['approved'] == True"
+
+    # Prepare HR to HR Approval
+    - id: conn_7
+      type: sequenceFlow
+      name: ""
+      from: element_7
+      to: element_8
+      properties: {}
+
+    # HR Approval to Gateway
+    - id: conn_8
+      type: sequenceFlow
+      name: ""
+      from: element_8
+      to: element_9
+      properties: {}
+
+    # Gateway to HR Denied (condition: not approved)
+    - id: conn_9
+      type: sequenceFlow
+      name: "Denied"
+      from: element_9
+      to: element_10
+      properties:
+        condition: "hrApprovalResult['approved'] == False"
+
+    # HR Denied to End
+    - id: conn_10
+      type: sequenceFlow
+      name: ""
+      from: element_10
+      to: element_11
+      properties: {}
+
+    # Gateway to Success Summary (condition: approved)
+    - id: conn_11
+      type: sequenceFlow
+      name: "Approved"
+      from: element_9
+      to: element_12
+      properties:
+        condition: "hrApprovalResult['approved'] == True"
+
+    # Success Summary to End
+    - id: conn_12
+      type: sequenceFlow
+      name: ""
+      from: element_12
+      to: element_13
+      properties: {}

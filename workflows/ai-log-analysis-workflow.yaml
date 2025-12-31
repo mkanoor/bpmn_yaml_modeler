@@ -224,21 +224,50 @@ process:
           import yaml
           import subprocess
 
+          # Get playbook path from context (from previous agentic task or default)
+          # Try multiple sources
+          playbookPath = None
+          if 'playbookPath' in context:
+              playbookPath = context['playbookPath']
+          elif 'element_9_result' in context and isinstance(context['element_9_result'], dict):
+              playbookPath = context['element_9_result'].get('playbookPath')
+
+          # Fallback to default
+          if not playbookPath:
+              playbookPath = '/tmp/playbook.yaml'
+
           # Validate YAML syntax
-          with open(playbookPath) as f:
-              playbook = yaml.safe_load(f)
+          try:
+              with open(playbookPath) as f:
+                  playbook = yaml.safe_load(f)
 
-          # Run ansible-lint
-          result = subprocess.run(
-              ['ansible-lint', playbookPath],
-              capture_output=True
-          )
+              # Run ansible-lint
+              lint_result = subprocess.run(
+                  ['ansible-lint', playbookPath],
+                  capture_output=True
+              )
 
-          validation = {
-              'valid': result.returncode == 0,
-              'errors': result.stderr.decode(),
-              'warnings': result.stdout.decode()
-          }
+              validation = {
+                  'valid': lint_result.returncode == 0,
+                  'errors': lint_result.stderr.decode() if lint_result.stderr else '',
+                  'warnings': lint_result.stdout.decode() if lint_result.stdout else ''
+              }
+          except FileNotFoundError:
+              # Playbook file doesn't exist yet
+              validation = {
+                  'valid': False,
+                  'errors': f'Playbook file not found: {playbookPath}',
+                  'warnings': 'Skipping validation - file not generated yet'
+              }
+          except Exception as e:
+              validation = {
+                  'valid': False,
+                  'errors': str(e),
+                  'warnings': ''
+              }
+
+          # Store result for gateway to evaluate
+          result = validation
 
     # Gateway - Playbook Valid?
     - id: element_11

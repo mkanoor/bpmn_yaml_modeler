@@ -1,0 +1,556 @@
+process:
+  id: process_1
+  name: Multi-Level Approval with Escalation
+  subProcessDefinitions: []
+  pools:
+    - id: element_1
+      name: IT Approval Process
+      x: 50
+      y: 100
+      width: 1200
+      height: 400
+      lanes:
+        - id: element_2
+          name: Requester
+          height: 130
+        - id: element_3
+          name: IT Admin
+          height: 135
+        - id: element_4
+          name: IT Manager
+          height: 135
+  elements:
+    # Lane 1: Requester
+    - id: element_5
+      type: startEvent
+      name: Start Approval Request
+      x: 100
+      y: 160
+      poolId: element_1
+      laneId: element_2
+      properties:
+        documentation: User initiates an approval request (e.g., software installation, access request, etc.)
+
+    - id: element_6
+      type: userTask
+      name: Submit Request Details
+      x: 200
+      y: 160
+      poolId: element_1
+      laneId: element_2
+      properties:
+        assignee: ${requesterId}
+        priority: Medium
+        documentation: Requester fills out the approval request form with details
+        custom:
+          requestType: Software Installation
+          urgency: Normal
+
+    # Lane 2: IT Admin (First Level Approval)
+    - id: element_7
+      type: sendTask
+      name: Email IT Admin
+      x: 350
+      y: 295
+      poolId: element_1
+      laneId: element_3
+      properties:
+        messageType: Email
+        to: ${itAdminEmail}
+        subject: "[ACTION REQUIRED] Approval Request from ${requesterName}"
+        messageBody: |
+          Hello ${itAdminName},
+
+          You have received a new approval request:
+
+          Requester: ${requesterName}
+          Request Type: ${requestType}
+          Details: ${requestDetails}
+          Priority: ${priority}
+
+          Please review and approve/reject this request within ${adminTimeoutMinutes} minutes.
+
+          Click below to approve or reject:
+          [Approve] [Reject]
+
+          Thank you,
+          Automated Approval System
+        useGmail: true
+        htmlFormat: true
+        includeApprovalLinks: true
+        approvalMessageRef: itAdminApproval
+        approvalCorrelationKey: ${requestId}
+        documentation: Send email to IT Admin with approval links
+
+    - id: element_8
+      type: receiveTask
+      name: Wait for IT Admin Response
+      x: 520
+      y: 295
+      poolId: element_1
+      laneId: element_3
+      properties:
+        messageRef: itAdminApproval
+        correlationKey: ${requestId}
+        timeout: 3600000
+        useWebhook: true
+        documentation: Wait for IT Admin to click Approve or Reject in email. High timeout (1 hour) - boundary timers control actual timing
+
+    # Boundary Timer on IT Admin Response (Non-Interrupting for warning, Interrupting for escalation)
+    - id: element_9
+      type: timerBoundaryEvent
+      name: Admin Response Warning
+      x: 565
+      y: 320
+      poolId: element_1
+      laneId: element_3
+      attachedToRef: element_8
+      properties:
+        timerDuration: PT30S
+        cancelActivity: false
+        documentation: Non-interrupting timer - sends warning at 30 seconds but task continues
+
+    - id: element_10
+      type: timerBoundaryEvent
+      name: Admin Response Timeout
+      x: 565
+      y: 270
+      poolId: element_1
+      laneId: element_3
+      attachedToRef: element_8
+      properties:
+        timerDuration: PT1M
+        cancelActivity: true
+        documentation: Interrupting timer - escalates to manager after 1 minute (cancels admin wait)
+
+    # Warning path (non-interrupting)
+    - id: element_11
+      type: sendTask
+      name: Send Warning to Admin
+      x: 650
+      y: 380
+      poolId: element_1
+      laneId: element_3
+      properties:
+        messageType: Email
+        to: ${itAdminEmail}
+        subject: "[URGENT] Approval Request Pending - ${requestId}"
+        messageBody: |
+          Hello ${itAdminName},
+
+          REMINDER: You have a pending approval request that requires your attention.
+
+          Request ID: ${requestId}
+          Requester: ${requesterName}
+          Time Remaining: ~2 minutes before escalation to ${itManagerName}
+
+          Please review immediately:
+          [Approve] [Reject]
+
+          If not responded within ${escalationMinutes} minutes total, this will be escalated to your manager.
+        useGmail: true
+        htmlFormat: true
+        documentation: Send warning email to IT Admin before escalation
+
+    # Lane 3: IT Manager (Escalation Path)
+    - id: element_12
+      type: sendTask
+      name: Email IT Manager (Escalation)
+      x: 680
+      y: 430
+      poolId: element_1
+      laneId: element_4
+      properties:
+        messageType: Email
+        to: ${itManagerEmail}
+        subject: "[ESCALATED] Approval Request - No Response from ${itAdminName}"
+        messageBody: |
+          Hello ${itManagerName},
+
+          This approval request has been ESCALATED to you because ${itAdminName} did not respond within ${escalationMinutes} minutes.
+
+          Original Request Details:
+          - Request ID: ${requestId}
+          - Requester: ${requesterName}
+          - Request Type: ${requestType}
+          - Details: ${requestDetails}
+          - Submitted: ${submittedTime}
+          - Assigned to: ${itAdminName} (${itAdminEmail})
+          - Reason for Escalation: No response within SLA
+
+          Please review and approve/reject this request in ${itAdminName}'s absence within ${managerTimeoutMinutes} minutes.
+
+          Click below to approve or reject:
+          [Approve] [Reject]
+
+          Thank you,
+          Automated Approval System
+        useGmail: true
+        htmlFormat: true
+        includeApprovalLinks: true
+        approvalMessageRef: itManagerApproval
+        approvalCorrelationKey: ${requestId}
+        documentation: Escalate to IT Manager when IT Admin doesn't respond in time
+
+    - id: element_13
+      type: receiveTask
+      name: Wait for Manager Response
+      x: 850
+      y: 430
+      poolId: element_1
+      laneId: element_4
+      properties:
+        messageRef: itManagerApproval
+        correlationKey: ${requestId}
+        timeout: 3600000
+        useWebhook: true
+        documentation: Wait for IT Manager approval/rejection. High timeout (1 hour) - boundary timer controls actual timing
+
+    # Boundary Timer on Manager Response (Interrupting - leads to failure)
+    - id: element_14
+      type: timerBoundaryEvent
+      name: Manager Response Timeout
+      x: 895
+      y: 405
+      poolId: element_1
+      laneId: element_4
+      attachedToRef: element_13
+      properties:
+        timerDuration: PT2M
+        cancelActivity: true
+        documentation: Interrupting timer - process fails if manager doesn't respond in 2 minutes
+
+    # Decision Gateway for Admin Response
+    - id: element_15
+      type: exclusiveGateway
+      name: Admin Approved?
+      x: 680
+      y: 295
+      poolId: element_1
+      laneId: element_3
+      properties:
+        documentation: Check if IT Admin approved or rejected
+
+    # Decision Gateway for Manager Response
+    - id: element_16
+      type: exclusiveGateway
+      name: Manager Approved?
+      x: 1000
+      y: 430
+      poolId: element_1
+      laneId: element_4
+      properties:
+        documentation: Check if IT Manager approved or rejected
+
+    # Merge gateway for approved paths
+    - id: element_17
+      type: exclusiveGateway
+      name: Merge Approvals
+      x: 850
+      y: 220
+      poolId: element_1
+      laneId: element_2
+      properties:
+        documentation: Merge approved paths from Admin or Manager
+
+    # Success path
+    - id: element_18
+      type: serviceTask
+      name: Process Approved Request
+      x: 950
+      y: 160
+      poolId: element_1
+      laneId: element_2
+      properties:
+        implementation: External
+        topic: process-approved-request
+        resultVariable: processResult
+        documentation: Execute the approved action (install software, grant access, etc.)
+
+    - id: element_19
+      type: sendTask
+      name: Send Approval Confirmation
+      x: 1050
+      y: 160
+      poolId: element_1
+      laneId: element_2
+      properties:
+        messageType: Email
+        to: ${requesterEmail}
+        subject: "✅ Request Approved - ${requestId}"
+        messageBody: |
+          Hello ${requesterName},
+
+          Good news! Your request has been APPROVED.
+
+          Request ID: ${requestId}
+          Request Type: ${requestType}
+          Approved By: ${approverName}
+          Approved At: ${approvedTime}
+
+          Your request is now being processed. You will receive another notification once completed.
+
+          Thank you,
+          IT Department
+        useGmail: true
+        htmlFormat: true
+        documentation: Notify requester of approval
+
+    - id: element_20
+      type: endEvent
+      name: Request Approved
+      x: 1140
+      y: 160
+      poolId: element_1
+      laneId: element_2
+      properties:
+        documentation: Successful completion - request approved and processed
+
+    # Rejection paths
+    - id: element_21
+      type: sendTask
+      name: Send Rejection Notice
+      x: 800
+      y: 340
+      poolId: element_1
+      laneId: element_3
+      properties:
+        messageType: Email
+        to: ${requesterEmail}
+        subject: "❌ Request Rejected - ${requestId}"
+        messageBody: |
+          Hello ${requesterName},
+
+          Unfortunately, your request has been REJECTED.
+
+          Request ID: ${requestId}
+          Request Type: ${requestType}
+          Rejected By: ${approverName}
+          Rejected At: ${rejectedTime}
+          Reason: ${rejectionReason}
+
+          Please contact ${approverName} if you have questions or wish to resubmit with modifications.
+
+          Thank you,
+          IT Department
+        useGmail: true
+        htmlFormat: true
+        documentation: Notify requester of rejection
+
+    - id: element_22
+      type: endEvent
+      name: Request Rejected
+      x: 900
+      y: 340
+      poolId: element_1
+      laneId: element_3
+      properties:
+        documentation: Request was rejected by approver
+
+    # Timeout failure path
+    - id: element_23
+      type: sendTask
+      name: Send Timeout Notification
+      x: 1000
+      y: 360
+      poolId: element_1
+      laneId: element_4
+      properties:
+        messageType: Email
+        to: ${requesterEmail};${itAdminEmail};${itManagerEmail}
+        subject: "⚠️ Request Timeout - ${requestId}"
+        messageBody: |
+          ATTENTION: Approval request has TIMED OUT.
+
+          Request ID: ${requestId}
+          Requester: ${requesterName}
+          Request Type: ${requestType}
+
+          Timeline:
+          - Submitted: ${submittedTime}
+          - Sent to IT Admin (${itAdminName}): ${sentToAdminTime}
+          - Escalated to Manager (${itManagerName}): ${escalatedTime}
+          - Timeout occurred: ${timeoutTime}
+
+          The request has been automatically REJECTED due to no response within the SLA timeframe.
+
+          Action Required:
+          - Requester: Please resubmit if still needed
+          - IT Admin/Manager: Please review SLA and response times
+
+          Thank you,
+          Automated Approval System
+        useGmail: true
+        htmlFormat: true
+        documentation: Notify all parties of timeout failure
+
+    - id: element_24
+      type: endEvent
+      name: Request Timeout Failed
+      x: 1100
+      y: 360
+      poolId: element_1
+      laneId: element_4
+      properties:
+        documentation: Process failed due to timeout - no response from approvers
+
+  connections:
+    # Main flow
+    - id: flow_1
+      type: sequenceFlow
+      name: ""
+      from: element_5
+      to: element_6
+      properties: {}
+
+    - id: flow_2
+      type: sequenceFlow
+      name: ""
+      from: element_6
+      to: element_7
+      properties: {}
+
+    - id: flow_3
+      type: sequenceFlow
+      name: ""
+      from: element_7
+      to: element_8
+      properties: {}
+
+    # Warning path (from non-interrupting timer)
+    - id: flow_4
+      type: sequenceFlow
+      name: 3 min warning
+      from: element_9
+      to: element_11
+      properties: {}
+
+    # Escalation path (from interrupting timer)
+    # Goes directly to manager email, bypassing the admin decision gateway
+    - id: flow_5
+      type: sequenceFlow
+      name: 1 min timeout
+      from: element_10
+      to: element_12
+      properties: {}
+
+    - id: flow_6
+      type: sequenceFlow
+      name: ""
+      from: element_12
+      to: element_13
+      properties: {}
+
+    # Manager timeout path
+    - id: flow_7
+      type: sequenceFlow
+      name: 10 min timeout
+      from: element_14
+      to: element_23
+      properties: {}
+
+    - id: flow_8
+      type: sequenceFlow
+      name: ""
+      from: element_23
+      to: element_24
+      properties: {}
+
+    # Admin response to decision
+    - id: flow_9
+      type: sequenceFlow
+      name: ""
+      from: element_8
+      to: element_15
+      properties: {}
+
+    # Admin approval path
+    - id: flow_10
+      type: sequenceFlow
+      name: Approved
+      from: element_15
+      to: element_17
+      properties:
+        condition: ${decision} == 'approved'
+
+    # Admin rejection path
+    - id: flow_11
+      type: sequenceFlow
+      name: Rejected
+      from: element_15
+      to: element_21
+      properties:
+        condition: ${decision} == 'denied'
+
+    # Default path (if decision variable not set - e.g., timeout occurred)
+    - id: flow_11b
+      type: sequenceFlow
+      name: No Response (Default)
+      from: element_15
+      to: element_21
+      properties:
+        condition: ""
+
+    - id: flow_12
+      type: sequenceFlow
+      name: ""
+      from: element_21
+      to: element_22
+      properties: {}
+
+    # Manager response to decision
+    - id: flow_13
+      type: sequenceFlow
+      name: ""
+      from: element_13
+      to: element_16
+      properties: {}
+
+    # Manager approval path
+    - id: flow_14
+      type: sequenceFlow
+      name: Approved
+      from: element_16
+      to: element_17
+      properties:
+        condition: ${decision} == 'approved'
+
+    # Manager rejection path
+    - id: flow_15
+      type: sequenceFlow
+      name: Rejected
+      from: element_16
+      to: element_21
+      properties:
+        condition: ${decision} == 'denied'
+
+    # Default path (if decision variable not set - e.g., timeout occurred)
+    - id: flow_15b
+      type: sequenceFlow
+      name: No Response (Default)
+      from: element_16
+      to: element_21
+      properties:
+        condition: ""
+
+    # Merged approval to process
+    - id: flow_16
+      type: sequenceFlow
+      name: ""
+      from: element_17
+      to: element_18
+      properties: {}
+
+    - id: flow_17
+      type: sequenceFlow
+      name: ""
+      from: element_18
+      to: element_19
+      properties: {}
+
+    - id: flow_18
+      type: sequenceFlow
+      name: ""
+      from: element_19
+      to: element_20
+      properties: {}

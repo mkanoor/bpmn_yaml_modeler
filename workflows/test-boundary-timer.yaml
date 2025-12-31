@@ -1,0 +1,92 @@
+process:
+  id: test_boundary_timer
+  name: Test Boundary Timer
+  subProcessDefinitions: []
+  pools: []
+  elements:
+    - id: start1
+      type: startEvent
+      name: Start
+      x: 100
+      y: 100
+      properties: {}
+
+    - id: wait1
+      type: receiveTask
+      name: Wait for Message
+      x: 250
+      y: 100
+      properties:
+        messageRef: testMessage
+        correlationKey: test123
+        timeout: 3600000
+        useWebhook: true
+
+    - id: timer1
+      type: timerBoundaryEvent
+      name: 30 Second Timeout
+      x: 295
+      y: 75
+      attachedToRef: wait1
+      properties:
+        timerDuration: PT30S
+        cancelActivity: true
+
+    - id: task1
+      type: task
+      name: Timeout Task
+      x: 400
+      y: 50
+      properties: {}
+
+    - id: end1
+      type: endEvent
+      name: Timeout End
+      x: 550
+      y: 50
+      properties: {}
+
+    - id: task2
+      type: task
+      name: Normal Task
+      x: 400
+      y: 150
+      properties: {}
+
+    - id: end2
+      type: endEvent
+      name: Normal End
+      x: 550
+      y: 150
+      properties: {}
+
+  connections:
+    - id: flow1
+      type: sequenceFlow
+      from: start1
+      to: wait1
+      properties: {}
+
+    - id: flow2
+      type: sequenceFlow
+      from: timer1
+      to: task1
+      properties: {}
+
+    - id: flow3
+      type: sequenceFlow
+      from: task1
+      to: end1
+      properties: {}
+
+    - id: flow4
+      type: sequenceFlow
+      from: wait1
+      to: task2
+      properties: {}
+
+    - id: flow5
+      type: sequenceFlow
+      from: task2
+      to: end2
+      properties: {}

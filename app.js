@@ -117,13 +117,17 @@ class BPMNModeler {
         paletteItems.forEach(item => {
             item.addEventListener('click', () => {
                 const type = item.getAttribute('data-type');
+                const interrupting = item.getAttribute('data-interrupting');
+
                 if (type === 'sequenceFlow') {
                     this.enterConnectionMode();
                 } else if (type === 'pool') {
                     this.addPool();
                 } else if (this.isBoundaryEventType(type)) {
                     // Boundary events need to attach to tasks
-                    this.enterBoundaryEventMode(type);
+                    // Pass interrupting flag (true/false) based on palette item
+                    const isInterrupting = interrupting === 'true' || interrupting === null; // Default to true if not specified
+                    this.enterBoundaryEventMode(type, isInterrupting);
                 } else {
                     // For other elements, we'll add them to the center of the canvas
                     this.addElement(type, 400, 300);
@@ -221,12 +225,14 @@ class BPMNModeler {
     }
 
     // Boundary event attachment mode
-    enterBoundaryEventMode(type) {
+    enterBoundaryEventMode(type, isInterrupting = true) {
         this.boundaryEventMode = true;
         this.boundaryEventType = type;
+        this.boundaryEventInterrupting = isInterrupting;
         this.canvas.style.cursor = 'crosshair';
 
-        console.log(`🎯 Boundary Event Mode: Click on a task to attach ${type}`);
+        const interruptingText = isInterrupting ? 'Interrupting' : 'Non-Interrupting';
+        console.log(`🎯 Boundary Event Mode: Click on a task to attach ${type} (${interruptingText})`);
 
         // Show helper message
         const message = document.createElement('div');
@@ -236,7 +242,7 @@ class BPMNModeler {
             top: 100px;
             left: 50%;
             transform: translateX(-50%);
-            background: #9b59b6;
+            background: ${isInterrupting ? '#9b59b6' : '#16a085'};
             color: white;
             padding: 10px 20px;
             border-radius: 4px;
@@ -244,13 +250,14 @@ class BPMNModeler {
             font-size: 14px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.2);
         `;
-        message.textContent = `Click on a task to attach ${this.getDefaultName(type)}`;
+        message.textContent = `Click on a task to attach ${this.getDefaultName(type)} (${interruptingText})`;
         document.body.appendChild(message);
     }
 
     exitBoundaryEventMode() {
         this.boundaryEventMode = false;
         this.boundaryEventType = null;
+        this.boundaryEventInterrupting = true; // Reset to default
         this.canvas.style.cursor = 'default';
 
         // Remove hint message
@@ -300,7 +307,11 @@ class BPMNModeler {
             taskId  // attachedToRef
         );
 
-        console.log(`✅ Attached ${this.boundaryEventType} to task ${task.name}`);
+        // Set interrupting property based on palette selection
+        boundaryEvent.properties.cancelActivity = this.boundaryEventInterrupting;
+
+        const interruptingText = this.boundaryEventInterrupting ? 'Interrupting' : 'Non-Interrupting';
+        console.log(`✅ Attached ${this.boundaryEventType} (${interruptingText}) to task ${task.name}`);
 
         this.exitBoundaryEventMode();
         this.selectElement(boundaryEvent);
@@ -651,7 +662,10 @@ class BPMNModeler {
                 // Get color for this boundary event type
                 const beColor = this.getBoundaryEventColor(element.type);
 
-                // Dashed outer circle
+                // Check if interrupting (default true if not specified)
+                const isInterrupting = element.properties?.cancelActivity !== false;
+
+                // Outer circle - solid if interrupting, dashed if non-interrupting
                 const beOuterCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
                 beOuterCircle.setAttribute('cx', 0);
                 beOuterCircle.setAttribute('cy', 0);
@@ -659,10 +673,12 @@ class BPMNModeler {
                 beOuterCircle.setAttribute('fill', 'white');
                 beOuterCircle.setAttribute('stroke', beColor);
                 beOuterCircle.setAttribute('stroke-width', 2);
-                beOuterCircle.setAttribute('stroke-dasharray', '3,2');
+                if (!isInterrupting) {
+                    beOuterCircle.setAttribute('stroke-dasharray', '3,2');
+                }
                 g.appendChild(beOuterCircle);
 
-                // Inner circle
+                // Inner circle - solid if interrupting, dashed if non-interrupting
                 const beInnerCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
                 beInnerCircle.setAttribute('cx', 0);
                 beInnerCircle.setAttribute('cy', 0);
@@ -670,6 +686,9 @@ class BPMNModeler {
                 beInnerCircle.setAttribute('fill', 'none');
                 beInnerCircle.setAttribute('stroke', beColor);
                 beInnerCircle.setAttribute('stroke-width', 1.5);
+                if (!isInterrupting) {
+                    beInnerCircle.setAttribute('stroke-dasharray', '2,1.5');
+                }
                 g.appendChild(beInnerCircle);
 
                 // Add icon specific to event type
@@ -1214,6 +1233,33 @@ class BPMNModeler {
                 }
             });
 
+            // Move tokens that are on elements in this pool
+            if (typeof aguiClient !== 'undefined' && aguiClient && aguiClient.tokens) {
+                const tokensLayer = document.getElementById('tokensLayer');
+                if (tokensLayer) {
+                    // Update each token group's transform for elements in this pool
+                    this.elements.forEach(element => {
+                        if (element.poolId === pool.id) {
+                            const tokensForElement = aguiClient.tokens.get(element.id);
+                            if (tokensForElement && tokensForElement.length > 0) {
+                                tokensForElement.forEach(tokenGroup => {
+                                    // Get current transform
+                                    const currentTransform = tokenGroup.getAttribute('transform');
+                                    const match = currentTransform?.match(/translate\(([^,]+),\s*([^)]+)\)/);
+                                    if (match) {
+                                        const currentX = parseFloat(match[1]);
+                                        const currentY = parseFloat(match[2]);
+                                        // Update with delta
+                                        tokenGroup.setAttribute('transform',
+                                            `translate(${currentX + deltaX}, ${currentY + deltaY})`);
+                                    }
+                                });
+                            }
+                        }
+                    });
+                }
+            }
+
             // Re-render everything
             this.rerenderPools();
             this.rerenderElements();
@@ -1272,8 +1318,340 @@ class BPMNModeler {
         this.showProperties(element);
     }
 
+    addPropertiesHeader(element) {
+        // Create header container
+        const header = document.createElement('div');
+        header.style.cssText = `
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            margin: -12px -12px 16px -12px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 4px 4px 0 0;
+            color: white;
+        `;
+
+        // Create SVG icon container
+        const iconContainer = document.createElement('div');
+        iconContainer.style.cssText = `
+            flex-shrink: 0;
+            width: 48px;
+            height: 48px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        `;
+
+        // Create inline SVG icon
+        const svg = this.createElementIconSVG(element);
+        svg.setAttribute('width', '32');
+        svg.setAttribute('height', '32');
+        iconContainer.appendChild(svg);
+
+        // Create text container
+        const textContainer = document.createElement('div');
+        textContainer.style.cssText = 'flex: 1;';
+
+        const typeName = document.createElement('div');
+        typeName.style.cssText = 'font-size: 0.75rem; opacity: 0.9; margin-bottom: 4px;';
+        typeName.textContent = this.getElementTypeName(element.type);
+
+        const elementName = document.createElement('div');
+        elementName.style.cssText = 'font-size: 1.1rem; font-weight: 600;';
+        elementName.textContent = element.name || element.id;
+
+        textContainer.appendChild(typeName);
+        textContainer.appendChild(elementName);
+
+        header.appendChild(iconContainer);
+        header.appendChild(textContainer);
+
+        this.propertiesContent.appendChild(header);
+    }
+
+    getElementTypeName(type) {
+        const typeNames = {
+            // Events
+            startEvent: 'Start Event',
+            endEvent: 'End Event',
+            intermediateEvent: 'Intermediate Event',
+            timerIntermediateCatchEvent: 'Timer Intermediate Catch Event',
+            boundaryTimerEvent: 'Boundary Timer Event',
+            errorBoundaryEvent: 'Error Boundary Event',
+            timerBoundaryEvent: 'Timer Boundary Event',
+            escalationBoundaryEvent: 'Escalation Boundary Event',
+            signalBoundaryEvent: 'Signal Boundary Event',
+            // Tasks
+            task: 'Task',
+            userTask: 'User Task',
+            serviceTask: 'Service Task',
+            scriptTask: 'Script Task',
+            sendTask: 'Send Task',
+            receiveTask: 'Receive Task',
+            manualTask: 'Manual Task',
+            businessRuleTask: 'Business Rule Task',
+            agenticTask: 'Agentic Task (AI)',
+            subProcess: 'Sub-Process',
+            callActivity: 'Call Activity',
+            // Gateways
+            exclusiveGateway: 'Exclusive Gateway (XOR)',
+            parallelGateway: 'Parallel Gateway (AND)',
+            inclusiveGateway: 'Inclusive Gateway (OR)',
+            // Other
+            pool: 'Pool (Swimlane)',
+            sequenceFlow: 'Sequence Flow (Connection)'
+        };
+        return typeNames[type] || type;
+    }
+
+    createElementIconSVG(element) {
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('viewBox', '0 0 100 100');
+        const type = element.type;
+
+        // Start Event
+        if (type === 'startEvent') {
+            const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            circle.setAttribute('cx', '50');
+            circle.setAttribute('cy', '50');
+            circle.setAttribute('r', '35');
+            circle.setAttribute('fill', 'none');
+            circle.setAttribute('stroke', 'white');
+            circle.setAttribute('stroke-width', '4');
+            svg.appendChild(circle);
+        }
+        // End Event
+        else if (type === 'endEvent') {
+            const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            circle.setAttribute('cx', '50');
+            circle.setAttribute('cy', '50');
+            circle.setAttribute('r', '35');
+            circle.setAttribute('fill', 'none');
+            circle.setAttribute('stroke', 'white');
+            circle.setAttribute('stroke-width', '8');
+            svg.appendChild(circle);
+        }
+        // Intermediate/Timer Events
+        else if (type === 'intermediateEvent' || type === 'timerIntermediateCatchEvent') {
+            const circle1 = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            circle1.setAttribute('cx', '50');
+            circle1.setAttribute('cy', '50');
+            circle1.setAttribute('r', '35');
+            circle1.setAttribute('fill', 'none');
+            circle1.setAttribute('stroke', 'white');
+            circle1.setAttribute('stroke-width', '4');
+            svg.appendChild(circle1);
+
+            const circle2 = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            circle2.setAttribute('cx', '50');
+            circle2.setAttribute('cy', '50');
+            circle2.setAttribute('r', '28');
+            circle2.setAttribute('fill', 'none');
+            circle2.setAttribute('stroke', 'white');
+            circle2.setAttribute('stroke-width', '3');
+            svg.appendChild(circle2);
+
+            if (type === 'timerIntermediateCatchEvent') {
+                // Clock icon
+                const clockCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                clockCircle.setAttribute('cx', '50');
+                clockCircle.setAttribute('cy', '50');
+                clockCircle.setAttribute('r', '18');
+                clockCircle.setAttribute('fill', 'none');
+                clockCircle.setAttribute('stroke', 'white');
+                clockCircle.setAttribute('stroke-width', '2');
+                svg.appendChild(clockCircle);
+
+                const hand1 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                hand1.setAttribute('x1', '50');
+                hand1.setAttribute('y1', '50');
+                hand1.setAttribute('x2', '50');
+                hand1.setAttribute('y2', '38');
+                hand1.setAttribute('stroke', 'white');
+                hand1.setAttribute('stroke-width', '2');
+                svg.appendChild(hand1);
+
+                const hand2 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                hand2.setAttribute('x1', '50');
+                hand2.setAttribute('y1', '50');
+                hand2.setAttribute('x2', '62');
+                hand2.setAttribute('y2', '50');
+                hand2.setAttribute('stroke', 'white');
+                hand2.setAttribute('stroke-width', '2');
+                svg.appendChild(hand2);
+            }
+        }
+        // Boundary Events
+        else if (this.isBoundaryEventType(type)) {
+            const color = 'white';
+            const circle1 = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            circle1.setAttribute('cx', '50');
+            circle1.setAttribute('cy', '50');
+            circle1.setAttribute('r', '35');
+            circle1.setAttribute('fill', 'none');
+            circle1.setAttribute('stroke', color);
+            circle1.setAttribute('stroke-width', '4');
+            circle1.setAttribute('stroke-dasharray', '6,4');
+            svg.appendChild(circle1);
+
+            const circle2 = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            circle2.setAttribute('cx', '50');
+            circle2.setAttribute('cy', '50');
+            circle2.setAttribute('r', '28');
+            circle2.setAttribute('fill', 'none');
+            circle2.setAttribute('stroke', color);
+            circle2.setAttribute('stroke-width', '3');
+            svg.appendChild(circle2);
+
+            // Add type-specific icon
+            if (type === 'errorBoundaryEvent') {
+                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                path.setAttribute('d', 'M 55 35 L 45 50 L 50 50 L 45 65 L 55 50 L 50 50 Z');
+                path.setAttribute('fill', color);
+                svg.appendChild(path);
+            } else if (type === 'timerBoundaryEvent') {
+                const clockCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                clockCircle.setAttribute('cx', '50');
+                clockCircle.setAttribute('cy', '50');
+                clockCircle.setAttribute('r', '15');
+                clockCircle.setAttribute('fill', 'none');
+                clockCircle.setAttribute('stroke', color);
+                clockCircle.setAttribute('stroke-width', '2');
+                svg.appendChild(clockCircle);
+            }
+        }
+        // Tasks
+        else if (type.includes('Task') || type === 'task' || type === 'subProcess' || type === 'callActivity') {
+            const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            rect.setAttribute('x', '15');
+            rect.setAttribute('y', '25');
+            rect.setAttribute('width', '70');
+            rect.setAttribute('height', '50');
+            rect.setAttribute('rx', '5');
+            rect.setAttribute('fill', 'none');
+            rect.setAttribute('stroke', 'white');
+            rect.setAttribute('stroke-width', '4');
+            svg.appendChild(rect);
+
+            // Add task-specific icon
+            if (type === 'userTask') {
+                const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                circle.setAttribute('cx', '28');
+                circle.setAttribute('cy', '38');
+                circle.setAttribute('r', '5');
+                circle.setAttribute('fill', 'none');
+                circle.setAttribute('stroke', 'white');
+                circle.setAttribute('stroke-width', '2');
+                svg.appendChild(circle);
+            } else if (type === 'serviceTask') {
+                const gear = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                gear.setAttribute('cx', '28');
+                gear.setAttribute('cy', '40');
+                gear.setAttribute('r', '6');
+                gear.setAttribute('fill', 'none');
+                gear.setAttribute('stroke', 'white');
+                gear.setAttribute('stroke-width', '2');
+                svg.appendChild(gear);
+            } else if (type === 'agenticTask') {
+                const brain = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                brain.setAttribute('x', '23');
+                brain.setAttribute('y', '45');
+                brain.setAttribute('font-size', '16');
+                brain.setAttribute('fill', '#ec4899');
+                brain.setAttribute('font-weight', 'bold');
+                brain.textContent = '🧠';
+                svg.appendChild(brain);
+            }
+        }
+        // Gateways
+        else if (type.includes('Gateway')) {
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            path.setAttribute('d', 'M 50 10 L 90 50 L 50 90 L 10 50 Z');
+            path.setAttribute('fill', 'none');
+            path.setAttribute('stroke', 'white');
+            path.setAttribute('stroke-width', '4');
+            svg.appendChild(path);
+
+            if (type === 'exclusiveGateway') {
+                const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                text.setAttribute('x', '50');
+                text.setAttribute('y', '65');
+                text.setAttribute('text-anchor', 'middle');
+                text.setAttribute('font-size', '48');
+                text.setAttribute('fill', 'white');
+                text.setAttribute('font-weight', 'bold');
+                text.textContent = '×';
+                svg.appendChild(text);
+            } else if (type === 'parallelGateway') {
+                const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                text.setAttribute('x', '50');
+                text.setAttribute('y', '62');
+                text.setAttribute('text-anchor', 'middle');
+                text.setAttribute('font-size', '48');
+                text.setAttribute('fill', 'white');
+                text.setAttribute('font-weight', 'bold');
+                text.textContent = '+';
+                svg.appendChild(text);
+            } else if (type === 'inclusiveGateway') {
+                const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                circle.setAttribute('cx', '50');
+                circle.setAttribute('cy', '50');
+                circle.setAttribute('r', '18');
+                circle.setAttribute('fill', 'none');
+                circle.setAttribute('stroke', 'white');
+                circle.setAttribute('stroke-width', '4');
+                svg.appendChild(circle);
+            }
+        }
+        // Sequence Flow (Connection)
+        else if (type === 'sequenceFlow') {
+            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            line.setAttribute('x1', '10');
+            line.setAttribute('y1', '50');
+            line.setAttribute('x2', '75');
+            line.setAttribute('y2', '50');
+            line.setAttribute('stroke', 'white');
+            line.setAttribute('stroke-width', '4');
+            svg.appendChild(line);
+
+            const arrowhead = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            arrowhead.setAttribute('d', 'M 75 50 L 65 45 L 65 55 Z');
+            arrowhead.setAttribute('fill', 'white');
+            svg.appendChild(arrowhead);
+        }
+        // Pool
+        else if (type === 'pool') {
+            const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            rect.setAttribute('x', '10');
+            rect.setAttribute('y', '20');
+            rect.setAttribute('width', '80');
+            rect.setAttribute('height', '60');
+            rect.setAttribute('fill', 'none');
+            rect.setAttribute('stroke', 'white');
+            rect.setAttribute('stroke-width', '4');
+            svg.appendChild(rect);
+
+            const divider = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            divider.setAttribute('x1', '25');
+            divider.setAttribute('y1', '20');
+            divider.setAttribute('x2', '25');
+            divider.setAttribute('y2', '80');
+            divider.setAttribute('stroke', 'white');
+            divider.setAttribute('stroke-width', '4');
+            svg.appendChild(divider);
+        }
+
+        return svg;
+    }
+
     showProperties(element) {
         this.propertiesContent.innerHTML = '';
+
+        // Add visual header with icon and type
+        this.addPropertiesHeader(element);
 
         // Handle connection (sequence flow) properties
         if (element.type === 'sequenceFlow') {
@@ -1500,11 +1878,8 @@ class BPMNModeler {
     }
 
     showConnectionProperties(connection) {
-        // Title
-        const title = document.createElement('h3');
-        title.textContent = 'Connection Properties';
-        title.style.marginTop = '0';
-        this.propertiesContent.appendChild(title);
+        // Visual header already added by showProperties()
+        // (showProperties calls addPropertiesHeader before calling this function)
 
         // ID (read-only)
         const idGroup = document.createElement('div');
@@ -2412,7 +2787,7 @@ Your tasks:
             const elementId = element.getAttribute('data-id');
             const state = {
                 classes: [],
-                marks: []
+                detachedMarks: []  // Changed: Store actual DOM nodes, not data
             };
 
             // Save runtime classes
@@ -2422,30 +2797,10 @@ Your tasks:
             if (element.classList.contains('skipped')) state.classes.push('skipped');
             if (element.classList.contains('cancelled')) state.classes.push('cancelled');
 
-            // Save runtime marks (completion, error, skip indicators)
-            element.querySelectorAll('.completion-mark, .error-mark, .skip-mark').forEach(mark => {
-                state.marks.push({
-                    className: mark.getAttribute('class'),
-                    x: mark.getAttribute('x') || '20',
-                    y: mark.getAttribute('y') || '-20',
-                    fontSize: mark.getAttribute('font-size') || '20',
-                    fill: mark.getAttribute('fill'),
-                    text: mark.textContent
-                });
-            });
-
-            // Save feedback icons
-            element.querySelectorAll('.feedback-icon').forEach(icon => {
-                state.marks.push({
-                    className: 'feedback-icon',
-                    x: icon.getAttribute('x') || '-30',
-                    y: icon.getAttribute('y') || '-20',
-                    fontSize: icon.getAttribute('font-size') || '24',
-                    cursor: icon.getAttribute('cursor') || 'pointer',
-                    text: icon.textContent,
-                    // Save click handler by storing element ID
-                    feedbackIconFor: elementId
-                });
+            // Detach runtime marks (keep actual DOM nodes, not copies)
+            element.querySelectorAll('.completion-mark, .error-mark, .skip-mark, .feedback-icon').forEach(mark => {
+                mark.remove();  // Detach from element
+                state.detachedMarks.push(mark);  // Store the actual node
             });
 
             // Save outcome classes on end events
@@ -2458,7 +2813,7 @@ Your tasks:
                 }
             }
 
-            if (state.classes.length > 0 || state.marks.length > 0 || state.outcomeClass) {
+            if (state.classes.length > 0 || state.detachedMarks.length > 0 || state.outcomeClass) {
                 runtimeState.set(elementId, state);
             }
         });
@@ -2484,25 +2839,35 @@ Your tasks:
             }
         });
 
-        // Save path indicators (checkmarks and X marks on flows)
-        const pathIndicators = [];
+        // Detach path indicators (checkmarks and X marks on flows)
+        // Changed: Store actual DOM nodes, not data
+        const detachedPathIndicators = [];
         document.querySelectorAll('.path-indicator').forEach(indicator => {
-            pathIndicators.push({
-                className: indicator.getAttribute('class'),
-                x: indicator.getAttribute('x'),
-                y: indicator.getAttribute('y'),
-                fontSize: indicator.getAttribute('font-size'),
-                fill: indicator.getAttribute('fill'),
-                fontWeight: indicator.getAttribute('font-weight'),
-                text: indicator.textContent
-            });
+            indicator.remove();  // Detach from connectionsLayer
+            detachedPathIndicators.push(indicator);  // Store the actual node
         });
+
+        // Save token layer before clearing (tokens should persist across re-renders)
+        // IMPORTANT: Detach (not clone) so token positions are preserved
+        const tokensLayer = document.getElementById('tokensLayer');
+        let detachedTokensLayer = null;
+        if (tokensLayer) {
+            detachedTokensLayer = tokensLayer;
+            tokensLayer.remove(); // Detach from DOM (but keep reference)
+        }
 
         // Full re-render of all elements (used when type changes)
         this.elementsLayer.innerHTML = '';
         this.elements.forEach(element => this.renderElement(element));
         this.connectionsLayer.innerHTML = '';
         this.connections.forEach(connection => this.renderConnection(connection));
+
+        // Restore tokens layer if it existed
+        if (detachedTokensLayer) {
+            // Append the SAME tokens layer back (not a clone!)
+            this.mainGroup.appendChild(detachedTokensLayer);
+            console.log(`   ✅ Restored tokensLayer with ${detachedTokensLayer.children.length} tokens`);
+        }
 
         // ===== RESTORE RUNTIME EXECUTION INDICATORS =====
         console.log(`   Restoring runtime state for ${runtimeState.size} elements`);
@@ -2517,43 +2882,11 @@ Your tasks:
             // Restore classes
             state.classes.forEach(className => element.classList.add(className));
 
-            // Restore marks
-            console.log(`   Restoring ${state.marks.length} marks for element ${elementId}`);
-            state.marks.forEach(markData => {
-                console.log(`      - ${markData.className} at (${markData.x}, ${markData.y})`);
-
-                const mark = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-                mark.setAttribute('class', markData.className);
-                mark.setAttribute('x', markData.x);
-                mark.setAttribute('y', markData.y);
-                mark.setAttribute('font-size', markData.fontSize);
-                mark.setAttribute('fill', markData.fill);
-                if (markData.cursor) mark.setAttribute('cursor', markData.cursor);
-                if (markData.fontWeight) mark.setAttribute('font-weight', markData.fontWeight);
-                mark.textContent = markData.text;
-
-                // Restore feedback icon click handler
-                if (markData.className === 'feedback-icon' && markData.feedbackIconFor) {
-                    mark.addEventListener('click', () => {
-                        const panel = document.getElementById(`feedback-panel-${markData.feedbackIconFor}`);
-                        if (panel) {
-                            const wasHidden = panel.style.display === 'none';
-                            panel.style.display = wasHidden ? 'block' : 'none';
-                            console.log(`💬 Feedback bubble clicked for ${markData.feedbackIconFor}`);
-                            console.log(`   Panel is now: ${wasHidden ? 'VISIBLE' : 'HIDDEN'}`);
-
-                            if (wasHidden && aguiClient) {
-                                const contentDiv = panel.querySelector('.feedback-content');
-                                if (contentDiv && contentDiv.children.length === 0) {
-                                    console.log(`   Panel is empty - requesting replay from server`);
-                                    aguiClient.requestReplay(markData.feedbackIconFor);
-                                }
-                            }
-                        }
-                    });
-                }
-
-                element.appendChild(mark);
+            // Restore marks by re-attaching the SAME DOM nodes
+            console.log(`   Restoring ${state.detachedMarks.length} marks for element ${elementId}`);
+            state.detachedMarks.forEach(mark => {
+                console.log(`      - ${mark.getAttribute('class')} at (${mark.getAttribute('x')}, ${mark.getAttribute('y')})`);
+                element.appendChild(mark);  // Re-attach the same node
             });
 
             // Restore outcome classes on end events
@@ -2577,20 +2910,11 @@ Your tasks:
             if (state.opacity) conn.setAttribute('opacity', state.opacity);
         });
 
-        // Restore path indicators
+        // Restore path indicators by re-attaching the SAME DOM nodes
+        console.log(`   Restoring ${detachedPathIndicators.length} path indicators`);
         const connectionsLayer = document.getElementById('connectionsLayer');
-        pathIndicators.forEach(indicatorData => {
-            const indicator = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-            indicator.setAttribute('class', indicatorData.className);
-            indicator.setAttribute('x', indicatorData.x);
-            indicator.setAttribute('y', indicatorData.y);
-            indicator.setAttribute('font-size', indicatorData.fontSize);
-            indicator.setAttribute('fill', indicatorData.fill);
-            if (indicatorData.fontWeight) {
-                indicator.setAttribute('font-weight', indicatorData.fontWeight);
-            }
-            indicator.textContent = indicatorData.text;
-            connectionsLayer.appendChild(indicator);
+        detachedPathIndicators.forEach(indicator => {
+            connectionsLayer.appendChild(indicator);  // Re-attach the same node
         });
     }
 
@@ -2955,6 +3279,11 @@ Your tasks:
                         laneId: element.laneId,
                         properties: element.properties
                     };
+
+                    // Include attachedToRef for boundary events
+                    if (element.attachedToRef) {
+                        exported.attachedToRef = element.attachedToRef;
+                    }
 
                     // Include subprocess-specific fields
                     if (element.type === 'subProcess') {

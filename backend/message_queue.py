@@ -51,6 +51,8 @@ class MessageQueue:
             }
 
             logger.info(f"Publishing message: {message_ref}, correlation: {correlation_key}")
+            logger.info(f"  Current waiting tasks for '{correlation_key}': {[tid for tid, _, _ in self.waiting_tasks.get(correlation_key, [])]}")
+            logger.info(f"  Total waiting tasks: {len(self.waiting_tasks[correlation_key]) if correlation_key in self.waiting_tasks else 0}")
 
             # Check if there's a waiting receive task
             if correlation_key in self.waiting_tasks and self.waiting_tasks[correlation_key]:
@@ -140,6 +142,20 @@ class MessageQueue:
             message = await future
             logger.info(f"Task {task_id} received message")
             return message
+        except asyncio.CancelledError:
+            # Task was cancelled - clean up from waiting list
+            logger.info(f"Task {task_id} cancelled while waiting - cleaning up from queue")
+            async with self.lock:
+                if correlation_key in self.waiting_tasks:
+                    self.waiting_tasks[correlation_key] = [
+                        (tid, fut, th) for tid, fut, th in self.waiting_tasks[correlation_key]
+                        if tid != task_id
+                    ]
+                    logger.info(f"Removed cancelled task {task_id} from waiting list")
+            # Cancel the timeout handler
+            if timeout_handle:
+                timeout_handle.cancel()
+            raise
         except asyncio.TimeoutError:
             logger.warning(f"Task {task_id} timed out waiting for message")
             raise

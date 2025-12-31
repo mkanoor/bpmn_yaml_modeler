@@ -128,7 +128,13 @@ class WorkflowExecutor {
         const data = {
             process: {
                 id: 'process_1',
-                name: 'BPMN Process',
+                name: modeler.workflowName || 'BPMN Process',
+                subProcessDefinitions: modeler.subProcessDefinitions.map(def => ({
+                    id: def.id,
+                    name: def.name,
+                    elements: def.elements,
+                    connections: def.connections
+                })),
                 pools: modeler.pools.map(pool => ({
                     id: pool.id,
                     name: pool.name,
@@ -149,6 +155,11 @@ class WorkflowExecutor {
                         laneId: element.laneId,
                         properties: element.properties
                     };
+
+                    // Include attachedToRef for boundary events
+                    if (element.attachedToRef) {
+                        exported.attachedToRef = element.attachedToRef;
+                    }
 
                     if (element.type === 'subProcess') {
                         exported.expanded = element.expanded;

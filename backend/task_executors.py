@@ -1412,10 +1412,157 @@ class BoundaryTimerEventExecutor(TaskExecutor):
         )
 
 
+class CallActivityExecutor(TaskExecutor):
+    """Executes call activities - calls reusable subprocess definitions"""
+
+    def __init__(self, workflow_engine=None):
+        self.workflow_engine = workflow_engine
+
+    async def execute(self, task: Element, context: Dict[str, Any]) -> AsyncGenerator[TaskProgress, None]:
+        """Execute call activity by running subprocess definition"""
+        logger.info(f"Executing call activity: {task.name}")
+
+        props = task.properties
+        called_element = props.get('calledElement', '')
+        inherit_variables = props.get('inheritVariables', True)
+        input_mappings = props.get('inputMappings', [])
+        output_mappings = props.get('outputMappings', [])
+
+        if not called_element:
+            logger.error(f"Call activity {task.name} has no calledElement specified")
+            yield TaskProgress(
+                status='error',
+                message='No subprocess definition specified',
+                progress=1.0,
+                result={'error': 'calledElement not specified'}
+            )
+            return
+
+        # Get subprocess definition from workflow engine
+        if not self.workflow_engine:
+            logger.error("CallActivityExecutor has no workflow_engine reference")
+            yield TaskProgress(
+                status='error',
+                message='Cannot access subprocess definitions',
+                progress=1.0,
+                result={'error': 'No workflow engine available'}
+            )
+            return
+
+        subprocess_def = self.workflow_engine.get_subprocess_definition(called_element)
+        if not subprocess_def:
+            logger.error(f"Subprocess definition not found: {called_element}")
+            yield TaskProgress(
+                status='error',
+                message=f'Subprocess definition not found: {called_element}',
+                progress=1.0,
+                result={'error': f'Subprocess {called_element} not found'}
+            )
+            return
+
+        logger.info(f"✅ Found subprocess definition: {subprocess_def.get('name')}")
+
+        # Prepare subprocess context
+        if inherit_variables:
+            # Copy all parent variables
+            subprocess_context = context.copy()
+            logger.info(f"Inherited all {len(context)} variables from parent")
+        else:
+            # Start with empty context if not inheriting
+            subprocess_context = {}
+            logger.info("Starting with empty subprocess context (inheritVariables=false)")
+
+        # Always add workflowInstanceId and taskId to subprocess context
+        if 'workflowInstanceId' in context:
+            subprocess_context['workflowInstanceId'] = context['workflowInstanceId']
+        subprocess_context['taskId'] = task.id
+        logger.info(f"Added correlation variables to subprocess context: workflowInstanceId={subprocess_context.get('workflowInstanceId')}, taskId={task.id}")
+
+        # Apply input mappings
+        if input_mappings:
+            logger.info(f"Applying {len(input_mappings)} input mappings")
+            for mapping in input_mappings:
+                source = mapping.get('source', '')
+                target = mapping.get('target', '')
+
+                if not source or not target:
+                    continue
+
+                # Resolve source value from parent context (supports dot notation)
+                value = self._resolve_variable(source, context)
+                subprocess_context[target] = value
+                logger.info(f"  Mapped: {source} → {target} = {value}")
+
+        yield TaskProgress(
+            status='running',
+            message=f'Calling subprocess: {subprocess_def.get("name")}',
+            progress=0.1
+        )
+
+        # Execute subprocess
+        try:
+            logger.info(f"Executing subprocess with {len(subprocess_context)} variables")
+            subprocess_result = await self.workflow_engine.execute_subprocess(
+                subprocess_def,
+                subprocess_context,
+                parent_task_id=task.id
+            )
+
+            logger.info(f"Subprocess completed with result: {subprocess_result}")
+
+            # Apply output mappings to parent context
+            if output_mappings:
+                logger.info(f"Applying {len(output_mappings)} output mappings")
+                for mapping in output_mappings:
+                    source = mapping.get('source', '')
+                    target = mapping.get('target', '')
+
+                    if not source or not target:
+                        continue
+
+                    # Resolve source value from subprocess result
+                    value = self._resolve_variable(source, subprocess_result)
+                    context[target] = value  # Update parent context directly
+                    logger.info(f"  Mapped output: {source} → {target} = {value}")
+
+            yield TaskProgress(
+                status='completed',
+                message=f'Subprocess {subprocess_def.get("name")} completed',
+                progress=1.0,
+                result=subprocess_result
+            )
+
+        except Exception as e:
+            logger.error(f"Error executing subprocess: {e}", exc_info=True)
+            yield TaskProgress(
+                status='error',
+                message=f'Subprocess execution failed: {str(e)}',
+                progress=1.0,
+                result={'error': str(e)}
+            )
+
+    def _resolve_variable(self, path: str, context: Dict[str, Any]) -> Any:
+        """Resolve variable from context using dot notation (e.g., 'budgetRequest.title')"""
+        parts = path.split('.')
+        value = context
+
+        for part in parts:
+            if isinstance(value, dict):
+                value = value.get(part)
+                if value is None:
+                    logger.warning(f"Variable path '{path}' not found in context (stopped at '{part}')")
+                    return None
+            else:
+                logger.warning(f"Cannot access '{part}' on non-dict value in path '{path}'")
+                return None
+
+        return value
+
+
 class TaskExecutorRegistry:
     """Registry of task executors"""
 
-    def __init__(self, agui_server=None, mcp_client=None):
+    def __init__(self, agui_server=None, mcp_client=None, workflow_engine=None):
         self.executors = {
             'userTask': UserTaskExecutor(agui_server),
             'serviceTask': ServiceTaskExecutor(),
@@ -1425,6 +1572,7 @@ class TaskExecutorRegistry:
             'manualTask': ManualTaskExecutor(),
             'businessRuleTask': BusinessRuleTaskExecutor(),
             'agenticTask': AgenticTaskExecutor(mcp_client, agui_server),
+            'callActivity': CallActivityExecutor(workflow_engine),
             'timerIntermediateCatchEvent': TimerIntermediateCatchEventExecutor(),
             'boundaryTimerEvent': BoundaryTimerEventExecutor(),
             'task': ManualTaskExecutor(),  # Default task type

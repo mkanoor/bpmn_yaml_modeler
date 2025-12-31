@@ -417,7 +417,7 @@ class AGUIClient {
             return null;
         }
 
-        // Get element position
+        // Get element position from its transform attribute
         const transform = element.getAttribute('transform');
         let x = 0, y = 0;
         if (transform) {
@@ -435,14 +435,20 @@ class AGUIClient {
         // Get color for this token
         const color = this.tokenColors[colorIndex % this.tokenColors.length];
 
-        // Create token (animated circle)
+        // Create token as a group with transform (so it moves with canvas zoom/pan)
         const tokenId = `token-${this.tokenCounter++}`;
+        const tokenGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        tokenGroup.setAttribute('id', tokenId);
+        tokenGroup.setAttribute('class', 'bpmn-token-group');
+        tokenGroup.setAttribute('transform', `translate(${x}, ${y})`);
+        tokenGroup.setAttribute('data-element-id', elementId); // Track which element this token belongs to
+
+        // Create token circle (at 0,0 within the group)
         const token = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-        token.setAttribute('id', tokenId);
         token.setAttribute('class', 'bpmn-token');
         token.setAttribute('data-token-color', color.name);
-        token.setAttribute('cx', x);
-        token.setAttribute('cy', y);
+        token.setAttribute('cx', 0);
+        token.setAttribute('cy', 0);
         token.setAttribute('r', '10'); // Increased from 8 to 10 for better visibility
         token.setAttribute('fill', color.fill);
         token.setAttribute('stroke', color.stroke);
@@ -451,6 +457,9 @@ class AGUIClient {
 
         // Add glow effect with stronger shadow
         token.style.filter = `drop-shadow(0 0 8px ${color.shadow})`;
+
+        // Append circle to token group
+        tokenGroup.appendChild(token);
 
         // Add to tokens layer (or create if doesn't exist)
         let tokensLayer = document.getElementById('tokensLayer');
@@ -469,23 +478,31 @@ class AGUIClient {
         }
 
         if (tokensLayer) {
-            tokensLayer.appendChild(token);
-            console.log(`    ✅ Token appended to tokensLayer`);
+            tokensLayer.appendChild(tokenGroup); // Append the group (which contains the circle)
+            console.log(`    ✅ Token group appended to tokensLayer`);
+
+            // Verify tokensLayer is inside mainGroup (critical for zoom/pan to work)
+            const parent = tokensLayer.parentElement;
+            if (parent && parent.id === 'mainGroup') {
+                console.log(`    ✅ tokensLayer correctly inside mainGroup (will transform with canvas)`);
+            } else {
+                console.error(`    ❌ WARNING: tokensLayer parent is "${parent?.id}" not "mainGroup" - tokens won't pan/zoom correctly!`);
+            }
         } else {
             console.warn(`    ❌ tokensLayer not found - token NOT added to DOM!`);
         }
 
-        // Store token in array for this element
+        // Store token GROUP in array for this element
         if (!this.tokens.has(elementId)) {
             this.tokens.set(elementId, []);
         }
-        this.tokens.get(elementId).push(token);
+        this.tokens.get(elementId).push(tokenGroup); // Store the group, not just the circle
 
         const colorEmoji = this.getColorEmoji(color.name);
         console.log(`    ${colorEmoji} ${color.name.toUpperCase()} token created at element: ${elementId} (${this.tokens.get(elementId).length} total)`);
-        console.log(`    Token position: cx=${token.getAttribute('cx')}, cy=${token.getAttribute('cy')}, r=${token.getAttribute('r')}`);
-        console.log(`    Token visible in DOM:`, token.parentElement !== null);
-        return token;
+        console.log(`    Token position: transform=${tokenGroup.getAttribute('transform')}, r=${token.getAttribute('r')}`);
+        console.log(`    Token visible in DOM:`, tokenGroup.parentElement !== null);
+        return tokenGroup; // Return the group instead of just the circle
     }
 
     getColorEmoji(colorName) {
@@ -552,8 +569,10 @@ class AGUIClient {
             const x = fromPos.x + (toPos.x - fromPos.x) * eased;
             const y = fromPos.y + (toPos.y - fromPos.y) * eased;
 
-            token.setAttribute('cx', x);
-            token.setAttribute('cy', y);
+            // Update token group's transform instead of cx/cy
+            token.setAttribute('transform', `translate(${x}, ${y})`);
+            // Also update data attribute so we can track position
+            token.setAttribute('data-element-id', toElementId);
 
             if (progress < 1) {
                 requestAnimationFrame(animate);

@@ -1,0 +1,385 @@
+process:
+  id: process_1
+  name: Call Activity with Variable Mappings Demo
+
+  # Subprocess Definitions
+  subProcessDefinitions:
+    - id: email_approval_subprocess
+      name: Email Approval Subprocess
+      elements:
+        - id: sp_start
+          type: startEvent
+          name: Start
+          x: 100
+          y: 200
+          properties: {}
+
+        - id: sp_send
+          type: sendTask
+          name: Send Approval Email
+          x: 250
+          y: 200
+          properties:
+            messageType: Email
+            to: "${approverEmail}"
+            subject: "Approval Required: ${requestTitle}"
+            messageBody: |
+              Please review and approve the following request.
+
+              Title: ${requestTitle}
+              Details: ${requestDetails}
+              Requester: ${requesterName}
+              Priority: ${requestPriority}
+
+              Click below to approve or deny:
+            useGmail: true
+            htmlFormat: true
+            includeApprovalLinks: true
+            approvalMessageRef: approvalRequest
+            approvalCorrelationKey: "${workflowInstanceId}-${taskId}"
+
+        - id: sp_receive
+          type: receiveTask
+          name: Await Response
+          x: 450
+          y: 200
+          properties:
+            messageRef: approvalRequest
+            correlationKey: "${workflowInstanceId}-${taskId}"
+            timeout: "3600000"
+            useWebhook: true
+
+        - id: sp_script
+          type: scriptTask
+          name: Process Decision
+          x: 600
+          y: 200
+          properties:
+            scriptFormat: Python
+            resultVariable: approvalResult
+            script: |
+              # Process the approval decision
+              decision_value = context.get('decision', 'pending')
+              approver = context.get('approver', 'unknown')
+              timestamp = context.get('timestamp', '')
+
+              result = {
+                  'approved': decision_value == 'approved',
+                  'decision': decision_value,
+                  'approvedBy': approver,
+                  'approvalTimestamp': timestamp,
+                  'comments': context.get('comments', '')
+              }
+
+        - id: sp_end
+          type: endEvent
+          name: End
+          x: 750
+          y: 200
+          properties: {}
+
+      connections:
+        - id: sp_conn1
+          type: sequenceFlow
+          name: ""
+          from: sp_start
+          to: sp_send
+          properties: {}
+
+        - id: sp_conn2
+          type: sequenceFlow
+          name: ""
+          from: sp_send
+          to: sp_receive
+          properties: {}
+
+        - id: sp_conn3
+          type: sequenceFlow
+          name: ""
+          from: sp_receive
+          to: sp_script
+          properties: {}
+
+        - id: sp_conn4
+          type: sequenceFlow
+          name: ""
+          from: sp_script
+          to: sp_end
+          properties: {}
+
+  # Main Process
+  pools:
+    - id: pool_1
+      name: Request Approval Workflow with Custom Data
+      x: 50
+      y: 50
+      width: 2000
+      height: 500
+      lanes:
+        - id: lane_1
+          name: Request Processing
+          height: 500
+
+  elements:
+    # Start Event
+    - id: element_1
+      type: startEvent
+      name: Start
+      x: 120
+      y: 200
+      poolId: pool_1
+      laneId: lane_1
+      properties: {}
+
+    # Prepare First Request
+    - id: element_2
+      type: scriptTask
+      name: Prepare Budget Request
+      x: 250
+      y: 200
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        scriptFormat: Python
+        resultVariable: budgetRequest
+        script: |
+          # Get approver from context or use default
+          budget_approver = context.get('budgetApprover', 'manager@example.com')
+
+          result = {
+              'type': 'budget',
+              'title': 'Q1 2024 Marketing Budget',
+              'details': 'Requesting $50,000 for digital marketing campaigns',
+              'amount': 50000,
+              'requester': {
+                  'name': 'Alice Johnson',
+                  'email': 'alice@example.com',
+                  'department': 'Marketing'
+              },
+              'priority': 'high',
+              'approver': budget_approver
+          }
+
+    # First Call Activity - Budget Approval with Input/Output Mappings
+    - id: element_3
+      type: callActivity
+      name: Budget Approval
+      x: 450
+      y: 200
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        calledElement: email_approval_subprocess
+        inheritVariables: false
+        inputMappings:
+          - source: budgetRequest.title
+            target: requestTitle
+          - source: budgetRequest.details
+            target: requestDetails
+          - source: budgetRequest.requester.name
+            target: requesterName
+          - source: budgetRequest.priority
+            target: requestPriority
+          - source: budgetRequest.approver
+            target: approverEmail
+        outputMappings:
+          - source: approvalResult
+            target: budgetApprovalResult
+
+    # Process Budget Result
+    - id: element_4
+      type: scriptTask
+      name: Process Budget Result
+      x: 650
+      y: 200
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        scriptFormat: Python
+        resultVariable: budgetProcessed
+        script: |
+          approval = context.get('budgetApprovalResult', {})
+          print(f"Budget approval: {approval.get('decision')}")
+          print(f"Approved by: {approval.get('approvedBy')}")
+          print(f"Timestamp: {approval.get('approvalTimestamp')}")
+
+          result = {
+              'budgetApproved': approval.get('approved', False),
+              'processedAt': 'timestamp'
+          }
+
+    # Prepare Second Request (different data)
+    - id: element_5
+      type: scriptTask
+      name: Prepare HR Request
+      x: 850
+      y: 200
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        scriptFormat: Python
+        resultVariable: hrRequest
+        script: |
+          # Get HR approver from context or use default
+          hr_approver = context.get('hrApprover', 'hr-director@example.com')
+
+          result = {
+              'type': 'hr',
+              'title': 'New Hire Request - Senior Developer',
+              'details': 'Requesting approval to hire a senior full-stack developer',
+              'salary': 120000,
+              'requester': {
+                  'name': 'Bob Smith',
+                  'email': 'bob@example.com',
+                  'department': 'Engineering'
+              },
+              'priority': 'medium',
+              'approver': hr_approver
+          }
+
+    # Second Call Activity - HR Approval (SAME subprocess, DIFFERENT data)
+    - id: element_6
+      type: callActivity
+      name: HR Approval
+      x: 1050
+      y: 200
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        calledElement: email_approval_subprocess
+        inheritVariables: false
+        inputMappings:
+          - source: hrRequest.title
+            target: requestTitle
+          - source: hrRequest.details
+            target: requestDetails
+          - source: hrRequest.requester.name
+            target: requesterName
+          - source: hrRequest.priority
+            target: requestPriority
+          - source: hrRequest.approver
+            target: approverEmail
+        outputMappings:
+          - source: approvalResult
+            target: hrApprovalResult
+
+    # Process HR Result
+    - id: element_7
+      type: scriptTask
+      name: Process HR Result
+      x: 1250
+      y: 200
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        scriptFormat: Python
+        resultVariable: hrProcessed
+        script: |
+          approval = context.get('hrApprovalResult', {})
+          print(f"HR approval: {approval.get('decision')}")
+          print(f"Approved by: {approval.get('approvedBy')}")
+          print(f"Timestamp: {approval.get('approvalTimestamp')}")
+
+          result = {
+              'hrApproved': approval.get('approved', False),
+              'processedAt': 'timestamp'
+          }
+
+    # Final Summary
+    - id: element_8
+      type: scriptTask
+      name: Generate Summary
+      x: 1450
+      y: 200
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        scriptFormat: Python
+        resultVariable: summary
+        script: |
+          budget = context.get('budgetApprovalResult', {})
+          hr = context.get('hrApprovalResult', {})
+
+          result = {
+              'budgetApproval': {
+                  'decision': budget.get('decision'),
+                  'approvedBy': budget.get('approvedBy')
+              },
+              'hrApproval': {
+                  'decision': hr.get('decision'),
+                  'approvedBy': hr.get('approvedBy')
+              },
+              'allApproved': budget.get('approved', False) and hr.get('approved', False)
+          }
+
+          print('=== Approval Summary ===')
+          print(f"Budget: {result['budgetApproval']}")
+          print(f"HR: {result['hrApproval']}")
+          print(f"All Approved: {result['allApproved']}")
+
+    # End Event
+    - id: element_9
+      type: endEvent
+      name: End
+      x: 1650
+      y: 200
+      poolId: pool_1
+      laneId: lane_1
+      properties: {}
+
+  connections:
+    - id: conn_1
+      type: sequenceFlow
+      name: ""
+      from: element_1
+      to: element_2
+      properties: {}
+
+    - id: conn_2
+      type: sequenceFlow
+      name: ""
+      from: element_2
+      to: element_3
+      properties: {}
+
+    - id: conn_3
+      type: sequenceFlow
+      name: ""
+      from: element_3
+      to: element_4
+      properties: {}
+
+    - id: conn_4
+      type: sequenceFlow
+      name: ""
+      from: element_4
+      to: element_5
+      properties: {}
+
+    - id: conn_5
+      type: sequenceFlow
+      name: ""
+      from: element_5
+      to: element_6
+      properties: {}
+
+    - id: conn_6
+      type: sequenceFlow
+      name: ""
+      from: element_6
+      to: element_7
+      properties: {}
+
+    - id: conn_7
+      type: sequenceFlow
+      name: ""
+      from: element_7
+      to: element_8
+      properties: {}
+
+    - id: conn_8
+      type: sequenceFlow
+      name: ""
+      from: element_8
+      to: element_9
+      properties: {}
