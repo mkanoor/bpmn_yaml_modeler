@@ -748,14 +748,51 @@ class AGUIClient {
         this.cancellableTasks.delete(elementId);
     }
 
+    isCompensationTask(element) {
+        /**
+         * Check if an element is a compensation task.
+         * Compensation tasks are identified by:
+         * 1. Having an incoming flow from a compensation boundary event
+         * 2. Typically in a compensation/rollback swimlane
+         * 3. No outgoing flows (they are terminal within the compensation flow)
+         */
+        if (!element || !modeler || !modeler.connections) {
+            return false;
+        }
+
+        // Find incoming connections
+        const incomingConnections = modeler.connections.filter(c => c.to === element.id);
+
+        // Check if any incoming connection is from a compensation boundary event
+        for (const conn of incomingConnections) {
+            const sourceElement = modeler.elements.find(e => e.id === conn.from);
+            if (sourceElement && sourceElement.type === 'compensationBoundaryEvent') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     moveTokenToNextElements(elementId) {
         // Find outgoing connections from this element
         if (typeof modeler !== 'undefined' && modeler.connections) {
             const outgoingConnections = modeler.connections.filter(c => c.from === elementId);
 
             if (outgoingConnections.length === 0) {
-                // End event - remove token
-                this.removeToken(elementId);
+                // No outgoing connections
+                // Check if this is a compensation task - if so, keep the token visible
+                const element = modeler.elements.find(e => e.id === elementId);
+                const isCompensationTask = element && this.isCompensationTask(element);
+
+                if (isCompensationTask) {
+                    console.log(`🔄 Compensation task ${elementId} completed - keeping token visible`);
+                    // Keep token visible on completed compensation task
+                    // Don't remove it - this shows the compensation was executed
+                } else {
+                    // End event or other terminal element - remove token
+                    this.removeToken(elementId);
+                }
             } else if (outgoingConnections.length === 1) {
                 // Single path - move token to next element
                 const nextElementId = outgoingConnections[0].to;

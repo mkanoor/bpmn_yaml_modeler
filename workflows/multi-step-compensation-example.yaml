@@ -1,0 +1,554 @@
+process:
+  id: process_multi_compensation
+  name: E-Commerce Order with Multi-Step Rollback (LIFO)
+  subProcessDefinitions: []
+  pools:
+    - id: pool_1
+      name: E-Commerce Order Processing
+      x: 50
+      y: 100
+      width: 1600
+      height: 450
+      lanes:
+        - id: lane_1
+          name: Order Processing
+          height: 225
+        - id: lane_2
+          name: Compensation (Rollback)
+          height: 225
+
+  elements:
+    # ========================================
+    # LANE 1: Main Order Flow
+    # ========================================
+    - id: start_1
+      type: startEvent
+      name: Start Order
+      x: 100
+      y: 190
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: Customer places an order for multiple items
+
+    # Step 1: Reserve Inventory
+    - id: task_inventory
+      type: scriptTask
+      name: Reserve Inventory
+      x: 200
+      y: 190
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        scriptFormat: python
+        script: |
+          import time
+          print(f"📦 Step 1: Reserving inventory for order {order_id}...")
+          print(f"   Items: {items}")
+          time.sleep(0.5)
+          inventory_reservation_id = f"INV-{workflowInstanceId[:8]}"
+          print(f"✅ Inventory reserved! Reservation ID: {inventory_reservation_id}")
+          print(f"   Timestamp: {datetime.now(timezone.utc).isoformat()}")
+          result = {
+            "reservation_id": inventory_reservation_id,
+            "items_reserved": items,
+            "status": "reserved",
+            "timestamp": datetime.now(timezone.utc).isoformat()
+          }
+        resultVariable: inventory_result
+        documentation: Reserve items from warehouse inventory
+
+    # Compensation boundary for inventory
+    - id: comp_inventory
+      type: compensationBoundaryEvent
+      name: Release Inventory
+      x: 245
+      y: 215
+      poolId: pool_1
+      laneId: lane_1
+      attachedToRef: task_inventory
+      properties:
+        cancelActivity: false
+        documentation: Undo inventory reservation
+
+    # Step 2: Authorize Payment
+    - id: task_authorize
+      type: scriptTask
+      name: Authorize Payment
+      x: 350
+      y: 190
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        scriptFormat: python
+        script: |
+          import time
+          print(f"💳 Step 2: Authorizing payment for ${total_amount}...")
+          print(f"   Card ending in: {card_last_4}")
+          time.sleep(0.5)
+          auth_code = f"AUTH-{workflowInstanceId[:8]}"
+          print(f"✅ Payment authorized! Auth code: {auth_code}")
+          print(f"   Amount held: ${total_amount}")
+          print(f"   Timestamp: {datetime.now(timezone.utc).isoformat()}")
+          result = {
+            "auth_code": auth_code,
+            "amount": total_amount,
+            "status": "authorized",
+            "timestamp": datetime.now(timezone.utc).isoformat()
+          }
+        resultVariable: payment_auth_result
+        documentation: Place hold on customer's credit card
+
+    # Compensation boundary for payment authorization
+    - id: comp_authorize
+      type: compensationBoundaryEvent
+      name: Release Payment Hold
+      x: 395
+      y: 215
+      poolId: pool_1
+      laneId: lane_1
+      attachedToRef: task_authorize
+      properties:
+        cancelActivity: false
+        documentation: Release the payment authorization hold
+
+    # Step 3: Create Shipment
+    - id: task_shipment
+      type: scriptTask
+      name: Create Shipment
+      x: 500
+      y: 190
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        scriptFormat: python
+        script: |
+          import time
+          print(f"📮 Step 3: Creating shipment to {shipping_address}...")
+          print(f"   Carrier: {shipping_carrier}")
+          time.sleep(0.5)
+          tracking_number = f"TRACK-{workflowInstanceId[:8]}"
+          print(f"✅ Shipment created! Tracking: {tracking_number}")
+          print(f"   Estimated delivery: 3-5 business days")
+          print(f"   Timestamp: {datetime.now(timezone.utc).isoformat()}")
+          result = {
+            "tracking_number": tracking_number,
+            "carrier": shipping_carrier,
+            "status": "label_created",
+            "timestamp": datetime.now(timezone.utc).isoformat()
+          }
+        resultVariable: shipment_result
+        documentation: Generate shipping label and create shipment
+
+    # Compensation boundary for shipment
+    - id: comp_shipment
+      type: compensationBoundaryEvent
+      name: Cancel Shipment
+      x: 545
+      y: 215
+      poolId: pool_1
+      laneId: lane_1
+      attachedToRef: task_shipment
+      properties:
+        cancelActivity: false
+        documentation: Cancel the shipment and void shipping label
+
+    # Step 4: Capture Payment (This is where failure can occur)
+    - id: task_capture
+      type: scriptTask
+      name: Capture Payment
+      x: 650
+      y: 190
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        scriptFormat: python
+        script: |
+          import time
+          print(f"💰 Step 4: Capturing payment (converting hold to actual charge)...")
+          print(f"   Auth code: {payment_auth_result.get('auth_code')}")
+          print(f"   Amount: ${payment_auth_result.get('amount')}")
+          time.sleep(0.5)
+
+          # Simulate payment capture failure for demo
+          capture_success = payment_capture_should_succeed  # Set via context
+
+          if not capture_success:
+              print(f"❌ PAYMENT CAPTURE FAILED - Card was declined or expired")
+              print(f"   ERROR: The authorized payment could not be captured")
+              print(f"   All previous steps must be rolled back!")
+              raise Exception("PaymentCaptureError: Card declined during capture")
+
+          transaction_id = f"TXN-{workflowInstanceId[:8]}"
+          print(f"✅ Payment captured successfully! Transaction ID: {transaction_id}")
+          print(f"   Amount charged: ${payment_auth_result.get('amount')}")
+          result = {
+            "transaction_id": transaction_id,
+            "amount": payment_auth_result.get('amount'),
+            "status": "captured",
+            "timestamp": datetime.now(timezone.utc).isoformat()
+          }
+        resultVariable: payment_capture_result
+        documentation: Finalize the payment by capturing the authorized amount
+
+    # Error boundary on payment capture - triggers compensation
+    - id: error_capture
+      type: errorBoundaryEvent
+      name: Capture Failed
+      x: 695
+      y: 165
+      poolId: pool_1
+      laneId: lane_1
+      attachedToRef: task_capture
+      properties:
+        errorCode: PaymentCaptureError
+        cancelActivity: true
+        documentation: Catches payment capture errors and triggers full rollback
+
+    # Success path
+    - id: task_confirm
+      type: sendTask
+      name: Send Order Confirmation
+      x: 800
+      y: 190
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        messageType: Email
+        to: ${customer_email}
+        subject: "✅ Order Confirmed - Order #${order_id}"
+        messageBody: |
+          Hello,
+
+          Your order has been confirmed and is being processed!
+
+          ORDER DETAILS:
+          • Order ID: ${order_id}
+          • Items: ${items}
+          • Total: $${total_amount}
+
+          PROCESSING STEPS COMPLETED:
+
+          1️⃣  INVENTORY RESERVED
+             Reservation ID: ${inventory_result.reservation_id}
+             Items: ${inventory_result.items_reserved}
+             Status: ${inventory_result.status}
+
+          2️⃣  PAYMENT AUTHORIZED & CAPTURED
+             Auth Code: ${payment_auth_result.auth_code}
+             Transaction ID: ${payment_capture_result.transaction_id}
+             Amount Charged: $${payment_capture_result.amount}
+             Status: ${payment_capture_result.status}
+
+          3️⃣  SHIPMENT CREATED
+             Tracking Number: ${shipment_result.tracking_number}
+             Carrier: ${shipment_result.carrier}
+             Estimated Delivery: 3-5 business days
+
+          Track your order: https://tracking.example.com/${shipment_result.tracking_number}
+
+          Thank you for your order!
+          E-Commerce Team
+        useGmail: true
+        htmlFormat: false
+        documentation: Send order confirmation to customer
+
+    - id: end_success
+      type: endEvent
+      name: Order Complete
+      x: 950
+      y: 190
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: Order successfully processed
+
+    # ========================================
+    # Error Path - Trigger Compensation
+    # ========================================
+    - id: task_log_error
+      type: scriptTask
+      name: Log Capture Failure
+      x: 800
+      y: 110
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        scriptFormat: python
+        script: |
+          print(f"📝 ========================================")
+          print(f"📝 CRITICAL ERROR - Payment capture failed!")
+          print(f"📝 ========================================")
+          print(f"   Order ID: {order_id}")
+          print(f"   Customer: {customer_email}")
+          print(f"   Amount: ${total_amount}")
+          print(f"   Auth Code: {payment_auth_result.get('auth_code') if payment_auth_result else 'N/A'}")
+          print(f"   ERROR: Payment capture was declined")
+          print(f"📝 Initiating FULL ROLLBACK of all completed steps...")
+          print(f"📝 ========================================")
+        documentation: Log the payment capture error for audit trail
+
+    - id: comp_throw
+      type: compensationIntermediateThrowEvent
+      name: Trigger Full Rollback
+      x: 950
+      y: 110
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: Triggers compensation - undoes shipment, payment auth, and inventory in LIFO order (reverse)
+
+    - id: task_notify_failure
+      type: sendTask
+      name: Notify Customer of Failure
+      x: 1100
+      y: 110
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        messageType: Email
+        to: ${customer_email}
+        subject: "❌ Order Failed - Order #${order_id}"
+        messageBody: |
+          Hello,
+
+          Unfortunately, we encountered an issue while processing your order.
+
+          ORDER DETAILS:
+          • Order ID: ${order_id}
+          • Items: ${items}
+          • Total: $${total_amount}
+
+          WHAT HAPPENED:
+          Your payment authorization was successful, but when we attempted to capture
+          the final payment, your card was declined. This can happen if:
+          - Your card expired between authorization and capture
+          - Your bank flagged the transaction
+          - Insufficient funds at time of capture
+
+          AUTOMATIC ROLLBACK COMPLETED:
+          We have automatically reversed all steps that were completed:
+
+          3️⃣  SHIPMENT CANCELLED
+             Tracking: ${shipment_result.tracking_number}
+             Status: CANCELLED - Shipping label voided
+
+          2️⃣  PAYMENT AUTHORIZATION RELEASED
+             Auth Code: ${payment_auth_result.auth_code}
+             Status: HOLD RELEASED - No charge to your card
+
+          1️⃣  INVENTORY RESERVATION RELEASED
+             Reservation ID: ${inventory_result.reservation_id}
+             Status: RELEASED - Items returned to available stock
+
+          NEXT STEPS:
+          • Please update your payment information
+          • Verify your card has sufficient funds
+          • Try placing your order again
+
+          No charges have been made to your card. All holds have been released.
+
+          If you have questions, please contact customer support.
+
+          E-Commerce Team
+        useGmail: true
+        htmlFormat: false
+        documentation: Notify customer that order failed and all steps were rolled back
+
+    - id: end_failure
+      type: endEvent
+      name: Order Failed
+      x: 1250
+      y: 110
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: Order failed and fully rolled back
+
+    # ========================================
+    # LANE 2: Compensation Flows (LIFO Rollback)
+    # ========================================
+    # These execute in REVERSE order: Shipment → Payment → Inventory
+
+    # Compensation Task 3: Cancel Shipment (EXECUTES FIRST - most recent)
+    - id: task_cancel_shipment
+      type: scriptTask
+      name: Cancel Shipment & Void Label
+      x: 500
+      y: 370
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        scriptFormat: python
+        script: |
+          import time
+          tracking_number = shipment_result.get('tracking_number') if shipment_result else 'UNKNOWN'
+          carrier = shipment_result.get('carrier') if shipment_result else 'UNKNOWN'
+          print(f"")
+          print(f"🔄 ========================================")
+          print(f"🔄 COMPENSATION STEP 1 (of 3)")
+          print(f"🔄 Cancelling SHIPMENT (most recent step)")
+          print(f"🔄 ========================================")
+          print(f"   Tracking Number: {tracking_number}")
+          print(f"   Carrier: {carrier}")
+          time.sleep(0.3)
+          print(f"   ✅ Shipping label voided")
+          print(f"   ✅ Carrier notified of cancellation")
+          print(f"   ✅ Shipment status: CANCELLED")
+          print(f"🔄 ========================================")
+        documentation: Undo shipment creation - void shipping label
+
+    # Compensation Task 2: Release Payment Authorization (EXECUTES SECOND)
+    - id: task_release_payment
+      type: scriptTask
+      name: Release Payment Authorization
+      x: 350
+      y: 370
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        scriptFormat: python
+        script: |
+          import time
+          auth_code = payment_auth_result.get('auth_code') if payment_auth_result else 'UNKNOWN'
+          amount = payment_auth_result.get('amount') if payment_auth_result else 0
+          print(f"")
+          print(f"🔄 ========================================")
+          print(f"🔄 COMPENSATION STEP 2 (of 3)")
+          print(f"🔄 Releasing PAYMENT AUTHORIZATION")
+          print(f"🔄 ========================================")
+          print(f"   Auth Code: {auth_code}")
+          print(f"   Held Amount: ${amount}")
+          time.sleep(0.3)
+          print(f"   ✅ Payment hold released")
+          print(f"   ✅ Funds returned to customer's available balance")
+          print(f"   ✅ No charge made to customer")
+          print(f"🔄 ========================================")
+        documentation: Undo payment authorization - release the hold
+
+    # Compensation Task 1: Release Inventory (EXECUTES LAST - oldest step)
+    - id: task_release_inventory
+      type: scriptTask
+      name: Release Inventory Reservation
+      x: 200
+      y: 370
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        scriptFormat: python
+        script: |
+          import time
+          reservation_id = inventory_result.get('reservation_id') if inventory_result else 'UNKNOWN'
+          items = inventory_result.get('items_reserved') if inventory_result else []
+          print(f"")
+          print(f"🔄 ========================================")
+          print(f"🔄 COMPENSATION STEP 3 (of 3)")
+          print(f"🔄 Releasing INVENTORY RESERVATION (oldest step)")
+          print(f"🔄 ========================================")
+          print(f"   Reservation ID: {reservation_id}")
+          print(f"   Items: {items}")
+          time.sleep(0.3)
+          print(f"   ✅ Inventory reservation cancelled")
+          print(f"   ✅ Items returned to available stock")
+          print(f"   ✅ Warehouse system updated")
+          print(f"🔄 ========================================")
+          print(f"")
+          print(f"✅ FULL ROLLBACK COMPLETE - All 3 steps undone in LIFO order")
+          print(f"   Order state: Fully reverted, no customer impact")
+          print(f"")
+        documentation: Undo inventory reservation - return items to stock
+
+  connections:
+    # Main flow
+    - id: flow_1
+      type: sequenceFlow
+      name: ""
+      from: start_1
+      to: task_inventory
+      properties: {}
+
+    - id: flow_2
+      type: sequenceFlow
+      name: ""
+      from: task_inventory
+      to: task_authorize
+      properties: {}
+
+    - id: flow_3
+      type: sequenceFlow
+      name: ""
+      from: task_authorize
+      to: task_shipment
+      properties: {}
+
+    - id: flow_4
+      type: sequenceFlow
+      name: ""
+      from: task_shipment
+      to: task_capture
+      properties: {}
+
+    - id: flow_5
+      type: sequenceFlow
+      name: Payment Captured
+      from: task_capture
+      to: task_confirm
+      properties: {}
+
+    - id: flow_6
+      type: sequenceFlow
+      name: ""
+      from: task_confirm
+      to: end_success
+      properties: {}
+
+    # Error path
+    - id: flow_error_1
+      type: sequenceFlow
+      name: Capture Failed
+      from: error_capture
+      to: task_log_error
+      properties: {}
+
+    - id: flow_error_2
+      type: sequenceFlow
+      name: ""
+      from: task_log_error
+      to: comp_throw
+      properties: {}
+
+    - id: flow_error_3
+      type: sequenceFlow
+      name: After Rollback
+      from: comp_throw
+      to: task_notify_failure
+      properties: {}
+
+    - id: flow_error_4
+      type: sequenceFlow
+      name: ""
+      from: task_notify_failure
+      to: end_failure
+      properties: {}
+
+    # Compensation flows (triggered by comp_throw in LIFO order)
+    - id: flow_comp_inventory
+      type: sequenceFlow
+      name: Undo Inventory (LAST)
+      from: comp_inventory
+      to: task_release_inventory
+      properties: {}
+
+    - id: flow_comp_authorize
+      type: sequenceFlow
+      name: Undo Payment (SECOND)
+      from: comp_authorize
+      to: task_release_payment
+      properties: {}
+
+    - id: flow_comp_shipment
+      type: sequenceFlow
+      name: Undo Shipment (FIRST)
+      from: comp_shipment
+      to: task_cancel_shipment
+      properties: {}

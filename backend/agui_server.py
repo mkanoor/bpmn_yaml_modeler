@@ -178,6 +178,10 @@ class AGUIServer:
         # Remove disconnected clients
         self.clients -= disconnected
 
+        # Yield to event loop to ensure message is flushed immediately
+        # This is critical when script tasks use time.sleep() which blocks the event loop
+        await asyncio.sleep(0)
+
     def register_task_preferences(self, element_id: str, task_properties: Dict[str, Any]):
         """Register task preferences for event filtering"""
         self.task_preferences[element_id] = task_properties

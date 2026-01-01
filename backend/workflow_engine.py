@@ -27,11 +27,9 @@ class WorkflowEngine:
         self.workflow_file = workflow_file  # Store filename for logging
 
         # Extract subprocess definitions if present
-        logger.info(f"DEBUG: workflow.process attributes: {dir(self.workflow.process)}")
-        logger.info(f"DEBUG: hasattr subprocess_definitions: {hasattr(self.workflow.process, 'subprocess_definitions')}")
         self.subprocess_definitions = self.workflow.process.subprocess_definitions
-        logger.info(f"DEBUG: subprocess_definitions value: {self.subprocess_definitions}")
-        logger.info(f"Loaded {len(self.subprocess_definitions)} subprocess definitions")
+        if self.subprocess_definitions:
+            logger.info(f"Loaded {len(self.subprocess_definitions)} subprocess definitions")
 
         # Initialize components (pass self for callActivity support)
         self.task_executors = TaskExecutorRegistry(agui_server, mcp_client, workflow_engine=self)
@@ -51,23 +49,13 @@ class WorkflowEngine:
         self.active_tasks: Dict[str, Element] = {}
         # Track asyncio tasks for proper cancellation (key: element_id, value: asyncio.Task)
         self.running_tasks: Dict[str, asyncio.Task] = {}
+        # Track completed tasks with compensation handlers (key: task_id, value: compensation_boundary_element)
+        self.compensation_handlers: Dict[str, Element] = {}
 
     def parse_yaml(self, yaml_content: str) -> Workflow:
         """Parse YAML into workflow object model"""
         try:
             data = yaml.safe_load(yaml_content)
-            logger.info(f"DEBUG parse_yaml: Keys in data['process']: {list(data.get('process', {}).keys())}")
-            logger.info(f"DEBUG parse_yaml: Has subProcessDefinitions: {'subProcessDefinitions' in data.get('process', {})}")
-            if 'subProcessDefinitions' in data.get('process', {}):
-                logger.info(f"DEBUG parse_yaml: Number of subProcessDefinitions in YAML: {len(data['process']['subProcessDefinitions'])}")
-
-            # Print the YAML content that was received
-            logger.info("=" * 80)
-            logger.info("FULL YAML CONTENT RECEIVED BY BACKEND:")
-            logger.info("=" * 80)
-            logger.info(yaml_content)
-            logger.info("=" * 80)
-
             return Workflow(**data)
         except Exception as e:
             logger.error(f"Error parsing YAML: {e}")
@@ -386,15 +374,22 @@ class WorkflowEngine:
         """Handle event"""
         logger.info(f"Handling event: {event.name} (type: {event.type})")
 
-        if event.type == 'startEvent':
+        # Convert enum to string for comparison
+        event_type_str = str(event.type).replace('ElementType.', '').replace('_', '')
+
+        if event.type == 'startEvent' or event_type_str.lower() == 'startevent':
             # Start event - just pass through
             pass
-        elif event.type == 'endEvent':
+        elif event.type == 'endEvent' or event_type_str.lower() == 'endevent':
             # End event - workflow path complete
             logger.info(f"Reached end event: {event.name}")
-        elif event.type == 'intermediateEvent':
+        elif event.type == 'intermediateEvent' or event_type_str.lower() == 'intermediateevent':
             # Intermediate event - might trigger actions
             pass
+        elif event.type == 'compensationIntermediateThrowEvent' or event_type_str.lower() == 'compensationintermediatethrowevent':
+            # Compensation throw event - trigger rollback of completed tasks
+            logger.info(f"🔄 Compensation throw event detected - triggering rollback")
+            await self.trigger_compensation(event)
         else:
             logger.warning(f"Unknown event type: {event.type}")
 
@@ -529,7 +524,7 @@ class WorkflowEngine:
         return result_context
 
     async def execute_task_with_boundary_events(self, task: Element) -> bool:
-        """Execute a task with error and timer boundary event support
+        """Execute a task with error, timer, and compensation boundary event support
 
         Returns:
             True if task was cancelled by an interrupting boundary event, False otherwise
@@ -545,19 +540,31 @@ class WorkflowEngine:
             e for e in self.workflow.process.elements
             if e.type == 'timerBoundaryEvent' and e.attachedToRef == task.id
         ]
+        compensation_boundaries = [
+            e for e in self.workflow.process.elements
+            if e.type == 'compensationBoundaryEvent' and e.attachedToRef == task.id
+        ]
 
-        logger.info(f"🔍 Found {len(error_boundaries)} error boundaries, {len(timer_boundaries)} timer boundaries")
+        logger.info(f"🔍 Found {len(error_boundaries)} error boundaries, {len(timer_boundaries)} timer boundaries, {len(compensation_boundaries)} compensation boundaries")
 
-        # If no boundary events, execute normally
+        # Register compensation handlers (they don't execute automatically - only when triggered)
+        if compensation_boundaries:
+            for comp_boundary in compensation_boundaries:
+                logger.info(f"📋 Registering compensation handler for task {task.id}: {comp_boundary.name}")
+                # Store compensation boundary for later triggering
+                self.compensation_handlers[task.id] = comp_boundary
+
+        # If no error/timer boundary events, execute normally
         if not error_boundaries and not timer_boundaries:
-            logger.info(f"🔍 No boundary events found for {task.id}, executing normally")
+            logger.info(f"🔍 No error/timer boundaries found for {task.id}, executing normally")
             await self.execute_task(task)
+            # Task completed successfully - compensation handler is now available if registered
             return False
 
         # If only error boundaries (no timers), wrap with try-catch
         if error_boundaries and not timer_boundaries:
-            await self.execute_task_with_error_boundaries(task, error_boundaries)
-            return False  # Error boundaries don't cancel the normal flow in this implementation
+            was_cancelled = await self.execute_task_with_error_boundaries(task, error_boundaries)
+            return was_cancelled  # Return whether task was cancelled by interrupting error boundary
 
         # If only timer boundaries (no error handlers), use timer wrapping
         if timer_boundaries and not error_boundaries:
@@ -568,13 +575,18 @@ class WorkflowEngine:
         was_cancelled = await self.execute_task_with_combined_boundaries(task, error_boundaries, timer_boundaries)
         return was_cancelled
 
-    async def execute_task_with_error_boundaries(self, task: Element, error_boundaries: List[Element]):
-        """Execute task with error boundary event support"""
+    async def execute_task_with_error_boundaries(self, task: Element, error_boundaries: List[Element]) -> bool:
+        """Execute task with error boundary event support
+
+        Returns:
+            True if task was cancelled by an interrupting error boundary, False otherwise
+        """
         try:
             # Execute the task normally
             await self.execute_task(task)
             # Task completed successfully
             logger.info(f"✅ Task {task.name} completed successfully (no errors)")
+            return False  # Task completed without error
 
         except asyncio.CancelledError:
             # Task was cancelled - re-raise without catching
@@ -618,7 +630,13 @@ class WorkflowEngine:
                         for elem in next_elements:
                             await self.execute_from_element(elem)
 
-                    return  # Error handled, don't propagate
+                    # Return True if interrupting, False if non-interrupting
+                    if cancel_activity:
+                        logger.info(f"🛑 Interrupting error boundary - task cancelled, normal flow will NOT continue")
+                        return True  # Task was cancelled, don't continue normal flow
+                    else:
+                        logger.info(f"⏭️  Non-interrupting error boundary - task continues, normal flow will continue")
+                        return False  # Task continues, normal flow continues
 
             # No boundary caught the error - re-raise
             logger.error(f"❌ No error boundary event caught {error_type} - re-raising")
@@ -744,6 +762,51 @@ class WorkflowEngine:
             # If an error occurs, check error boundaries
             await self.execute_task_with_error_boundaries(task, error_boundaries)
             return False  # Error boundaries don't cancel the normal flow in this implementation
+
+    async def trigger_compensation(self, throw_event: Element):
+        """Trigger compensation for all completed tasks with compensation handlers
+
+        This executes compensation flows in REVERSE order (LIFO - last in, first out)
+        to properly undo/rollback transactions.
+        """
+        logger.info(f"🔄 ========================================")
+        logger.info(f"🔄 COMPENSATION TRIGGERED by: {throw_event.name}")
+        logger.info(f"🔄 Registered compensation handlers: {list(self.compensation_handlers.keys())}")
+        logger.info(f"🔄 ========================================")
+
+        if not self.compensation_handlers:
+            logger.warning(f"⚠️  No compensation handlers registered - nothing to compensate")
+            return
+
+        # Execute compensation handlers in REVERSE order (LIFO)
+        # This ensures proper rollback order: last completed task is compensated first
+        task_ids = list(self.compensation_handlers.keys())
+        task_ids.reverse()
+
+        for task_id in task_ids:
+            comp_boundary = self.compensation_handlers[task_id]
+            logger.info(f"🔄 Triggering compensation for task {task_id}: {comp_boundary.name}")
+
+            # Activate the compensation boundary event
+            await self.agui_server.send_element_activated(
+                comp_boundary.id,
+                comp_boundary.type,
+                f"{comp_boundary.name} (compensating {task_id})"
+            )
+
+            # Mark boundary event as completed
+            await self.agui_server.send_element_completed(comp_boundary.id, 0)
+
+            # Follow the compensation flow (execute the undo/rollback tasks)
+            next_elements = self.workflow.get_outgoing_elements(comp_boundary)
+            if next_elements:
+                logger.info(f"➡️  Following compensation flow to: {[e.name for e in next_elements]}")
+                for elem in next_elements:
+                    await self.execute_from_element(elem)
+            else:
+                logger.warning(f"⚠️  Compensation boundary {comp_boundary.name} has no outgoing flow")
+
+        logger.info(f"🔄 ======================================== (END COMPENSATION)")
 
     def parse_iso8601_duration(self, duration_str: str) -> float:
         """Parse ISO 8601 duration string to seconds"""

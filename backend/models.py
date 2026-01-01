@@ -17,6 +17,8 @@ class ElementType(str, Enum):
     TIMER_BOUNDARY_EVENT = "timerBoundaryEvent"
     ESCALATION_BOUNDARY_EVENT = "escalationBoundaryEvent"
     SIGNAL_BOUNDARY_EVENT = "signalBoundaryEvent"
+    COMPENSATION_BOUNDARY_EVENT = "compensationBoundaryEvent"
+    COMPENSATION_INTERMEDIATE_THROW_EVENT = "compensationIntermediateThrowEvent"
     TASK = "task"
     USER_TASK = "userTask"
     SERVICE_TASK = "serviceTask"
@@ -112,7 +114,9 @@ class Element(BaseModel):
         return self.type in [
             ElementType.START_EVENT,
             ElementType.END_EVENT,
-            ElementType.INTERMEDIATE_EVENT
+            ElementType.INTERMEDIATE_EVENT,
+            ElementType.TIMER_INTERMEDIATE_CATCH_EVENT,
+            ElementType.COMPENSATION_INTERMEDIATE_THROW_EVENT
         ]
 
 

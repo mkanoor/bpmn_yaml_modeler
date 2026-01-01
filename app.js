@@ -198,7 +198,8 @@ class BPMNModeler {
             'errorBoundaryEvent',
             'timerBoundaryEvent',
             'escalationBoundaryEvent',
-            'signalBoundaryEvent'
+            'signalBoundaryEvent',
+            'compensationBoundaryEvent'
         ];
         return boundaryTypes.includes(type);
     }
@@ -406,7 +407,9 @@ class BPMNModeler {
             errorBoundaryEvent: 'Catch Error',
             timerBoundaryEvent: '30s Timeout',
             escalationBoundaryEvent: 'Escalate',
-            signalBoundaryEvent: 'Catch Signal'
+            signalBoundaryEvent: 'Catch Signal',
+            compensationBoundaryEvent: 'Compensate',
+            compensationIntermediateThrowEvent: 'Trigger Compensation'
         };
         return names[type] || type;
     }
@@ -659,6 +662,7 @@ class BPMNModeler {
             case 'timerBoundaryEvent':
             case 'escalationBoundaryEvent':
             case 'signalBoundaryEvent':
+            case 'compensationBoundaryEvent':
                 // Get color for this boundary event type
                 const beColor = this.getBoundaryEventColor(element.type);
 
@@ -1063,7 +1067,8 @@ class BPMNModeler {
             errorBoundaryEvent: '#e74c3c',
             timerBoundaryEvent: '#f39c12',
             escalationBoundaryEvent: '#9b59b6',
-            signalBoundaryEvent: '#3498db'
+            signalBoundaryEvent: '#3498db',
+            compensationBoundaryEvent: '#d35400'
         };
         return colors[type] || '#2c3e50';
     }
@@ -1120,6 +1125,21 @@ class BPMNModeler {
             path.setAttribute('stroke', color);
             path.setAttribute('stroke-width', 1.5);
             g.appendChild(path);
+        } else if (type === 'compensationBoundaryEvent') {
+            // Double backward arrows (<<)
+            const arrow1 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            arrow1.setAttribute('d', 'M -3 -5 L -7 0 L -3 5');
+            arrow1.setAttribute('fill', 'none');
+            arrow1.setAttribute('stroke', color);
+            arrow1.setAttribute('stroke-width', 1.5);
+            g.appendChild(arrow1);
+
+            const arrow2 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            arrow2.setAttribute('d', 'M 4 -5 L 0 0 L 4 5');
+            arrow2.setAttribute('fill', 'none');
+            arrow2.setAttribute('stroke', color);
+            arrow2.setAttribute('stroke-width', 1.5);
+            g.appendChild(arrow2);
         }
 
         return g;

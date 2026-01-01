@@ -1,0 +1,396 @@
+process:
+  id: process_compensation_demo
+  name: Travel Booking with Compensation (Error Rollback)
+  subProcessDefinitions: []
+  pools:
+    - id: pool_1
+      name: Travel Booking Process
+      x: 50
+      y: 100
+      width: 1400
+      height: 350
+      lanes:
+        - id: lane_1
+          name: Booking System
+          height: 175
+        - id: lane_2
+          name: Compensation (Rollback)
+          height: 175
+
+  elements:
+    # ========================================
+    # LANE 1: Main Booking Flow
+    # ========================================
+    - id: start_1
+      type: startEvent
+      name: Start Travel Booking
+      x: 100
+      y: 160
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: Customer starts booking a vacation package
+
+    - id: task_flight
+      type: scriptTask
+      name: Book Flight
+      x: 200
+      y: 160
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        scriptFormat: python
+        script: |
+          import time
+          print(f"🛫 Booking flight to {destination}...")
+          time.sleep(1)
+          flight_booking_id = f"FLIGHT-{workflow_instance_id[:8]}"
+          print(f"✅ Flight booked! Confirmation: {flight_booking_id}")
+          result = {"flight_booking_id": flight_booking_id, "status": "confirmed"}
+        resultVariable: flight_result
+        documentation: Book flight ticket - can be compensated (cancelled) if payment fails
+
+    # Compensation boundary for flight booking
+    - id: comp_flight
+      type: compensationBoundaryEvent
+      name: Cancel Flight
+      x: 245
+      y: 185
+      poolId: pool_1
+      laneId: lane_1
+      attachedToRef: task_flight
+      properties:
+        cancelActivity: false
+        documentation: Compensation handler - cancels flight booking if triggered
+
+    - id: task_hotel
+      type: scriptTask
+      name: Book Hotel
+      x: 350
+      y: 160
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        scriptFormat: python
+        script: |
+          import time
+          print(f"🏨 Booking hotel in {destination}...")
+          time.sleep(1)
+          hotel_booking_id = f"HOTEL-{workflow_instance_id[:8]}"
+          print(f"✅ Hotel booked! Confirmation: {hotel_booking_id}")
+          result = {"hotel_booking_id": hotel_booking_id, "status": "confirmed"}
+        resultVariable: hotel_result
+        documentation: Book hotel room - can be compensated (cancelled) if payment fails
+
+    # Compensation boundary for hotel booking
+    - id: comp_hotel
+      type: compensationBoundaryEvent
+      name: Cancel Hotel
+      x: 395
+      y: 185
+      poolId: pool_1
+      laneId: lane_1
+      attachedToRef: task_hotel
+      properties:
+        cancelActivity: false
+        documentation: Compensation handler - cancels hotel booking if triggered
+
+    - id: task_payment
+      type: scriptTask
+      name: Process Payment
+      x: 500
+      y: 160
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        scriptFormat: python
+        script: |
+          import time
+          print(f"💳 Processing payment of ${total_price}...")
+          time.sleep(1)
+
+          # Simulate payment failure for demo
+          payment_success = payment_should_succeed  # Set via context
+
+          if not payment_success:
+              print(f"❌ Payment FAILED - Insufficient funds")
+              raise Exception("PaymentError: Insufficient funds")
+
+          print(f"✅ Payment successful! Transaction ID: PAY-{workflow_instance_id[:8]}")
+          result = {"payment_id": f"PAY-{workflow_instance_id[:8]}", "status": "completed"}
+        resultVariable: payment_result
+        documentation: Process payment - may fail and trigger error boundary
+
+    # Error boundary on payment task - triggers compensation
+    - id: error_payment
+      type: errorBoundaryEvent
+      name: Payment Failed
+      x: 545
+      y: 135
+      poolId: pool_1
+      laneId: lane_1
+      attachedToRef: task_payment
+      properties:
+        errorCode: PaymentError
+        cancelActivity: true
+        documentation: Catches payment errors and triggers rollback of bookings
+
+    # Success path
+    - id: task_confirm
+      type: sendTask
+      name: Send Confirmation Email
+      x: 650
+      y: 160
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        messageType: Email
+        to: ${customer_email}
+        subject: "✅ Travel Booking Confirmed - ${destination}"
+        messageBody: |
+          Hello,
+
+          Great news! Your travel booking has been confirmed.
+
+          BOOKING SUMMARY:
+          • Destination: ${destination}
+          • Total Paid: $${total_price}
+
+          YOUR RESERVATIONS:
+
+          ✈️  FLIGHT CONFIRMED
+             Confirmation: ${flight_result.flight_booking_id}
+             Status: Booked and Ticketed
+
+          🏨 HOTEL CONFIRMED
+             Confirmation: ${hotel_result.hotel_booking_id}
+             Status: Reserved
+
+          💳 PAYMENT CONFIRMED
+             Transaction ID: ${payment_result.payment_id}
+             Amount: $${total_price}
+             Status: Completed
+
+          Your trip to ${destination} is all set! Have a wonderful journey.
+
+          If you need to make any changes, please contact our support team.
+
+          Thank you for booking with us!
+          Travel Booking System
+        useGmail: true
+        htmlFormat: false
+        documentation: Send booking confirmation to customer
+
+    - id: end_success
+      type: endEvent
+      name: Booking Complete
+      x: 780
+      y: 160
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: Travel booking completed successfully
+
+    # ========================================
+    # Error Path - Trigger Compensation
+    # ========================================
+    - id: task_log_error
+      type: scriptTask
+      name: Log Payment Error
+      x: 650
+      y: 80
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        scriptFormat: python
+        script: |
+          print(f"📝 Logging payment error...")
+          print(f"   Error: Payment failed for booking {workflow_instance_id}")
+          print(f"   Customer: {customer_email}")
+          print(f"   Amount: ${total_price}")
+        documentation: Log the payment error for audit trail
+
+    - id: comp_throw
+      type: compensationIntermediateThrowEvent
+      name: Trigger Rollback
+      x: 800
+      y: 80
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: Triggers compensation - cancels all completed bookings in reverse order
+
+    - id: task_notify_failure
+      type: sendTask
+      name: Notify Customer of Failure
+      x: 950
+      y: 80
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        messageType: Email
+        to: ${customer_email}
+        subject: "❌ Travel Booking Failed - Reservations Cancelled"
+        messageBody: |
+          Hello,
+
+          Unfortunately, your travel booking could not be completed due to a payment error.
+
+          BOOKING DETAILS:
+          • Destination: ${destination}
+          • Total Amount: $${total_price}
+
+          CANCELLED RESERVATIONS:
+          The following reservations were automatically cancelled at no charge to you:
+
+          ✈️  Flight Booking: ${flight_result.flight_booking_id}
+             Status: CANCELLED - Full refund initiated
+
+          🏨 Hotel Booking: ${hotel_result.hotel_booking_id}
+             Status: CANCELLED - No cancellation fees applied
+
+          NEXT STEPS:
+          Please update your payment information and try booking again.
+          All reservations have been fully reversed.
+
+          If you have any questions, please contact our support team.
+
+          Thank you,
+          Travel Booking System
+        useGmail: true
+        htmlFormat: false
+        documentation: Send email notification that booking failed and was rolled back
+
+    - id: end_failure
+      type: endEvent
+      name: Booking Failed
+      x: 1100
+      y: 80
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: Travel booking failed and rolled back
+
+    # ========================================
+    # LANE 2: Compensation Flows (Rollback)
+    # ========================================
+    # These tasks execute when compensation is triggered
+
+    - id: task_cancel_flight
+      type: scriptTask
+      name: Cancel Flight Booking
+      x: 200
+      y: 340
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        scriptFormat: python
+        script: |
+          import time
+          # Get flight booking ID from task result
+          flight_booking_id = flight_result.get('flight_booking_id') if flight_result else 'UNKNOWN'
+          print(f"🔄 COMPENSATING: Cancelling flight booking {flight_booking_id}...")
+          time.sleep(0.5)
+          print(f"✅ Flight booking {flight_booking_id} successfully cancelled")
+          print(f"   Refund initiated for flight ticket")
+        documentation: Undo flight booking - called as compensation
+
+    - id: task_cancel_hotel
+      type: scriptTask
+      name: Cancel Hotel Booking
+      x: 350
+      y: 340
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        scriptFormat: python
+        script: |
+          import time
+          # Get hotel booking ID from task result
+          hotel_booking_id = hotel_result.get('hotel_booking_id') if hotel_result else 'UNKNOWN'
+          print(f"🔄 COMPENSATING: Cancelling hotel booking {hotel_booking_id}...")
+          time.sleep(0.5)
+          print(f"✅ Hotel booking {hotel_booking_id} successfully cancelled")
+          print(f"   No cancellation fees applied")
+        documentation: Undo hotel booking - called as compensation
+
+  connections:
+    # Main flow
+    - id: flow_1
+      type: sequenceFlow
+      name: ""
+      from: start_1
+      to: task_flight
+      properties: {}
+
+    - id: flow_2
+      type: sequenceFlow
+      name: ""
+      from: task_flight
+      to: task_hotel
+      properties: {}
+
+    - id: flow_3
+      type: sequenceFlow
+      name: ""
+      from: task_hotel
+      to: task_payment
+      properties: {}
+
+    - id: flow_4
+      type: sequenceFlow
+      name: Payment Success
+      from: task_payment
+      to: task_confirm
+      properties: {}
+
+    - id: flow_5
+      type: sequenceFlow
+      name: ""
+      from: task_confirm
+      to: end_success
+      properties: {}
+
+    # Error path
+    - id: flow_error_1
+      type: sequenceFlow
+      name: Payment Failed
+      from: error_payment
+      to: task_log_error
+      properties: {}
+
+    - id: flow_error_2
+      type: sequenceFlow
+      name: ""
+      from: task_log_error
+      to: comp_throw
+      properties: {}
+
+    - id: flow_error_3
+      type: sequenceFlow
+      name: After Rollback
+      from: comp_throw
+      to: task_notify_failure
+      properties: {}
+
+    - id: flow_error_4
+      type: sequenceFlow
+      name: ""
+      from: task_notify_failure
+      to: end_failure
+      properties: {}
+
+    # Compensation flows (triggered by comp_throw)
+    - id: flow_comp_flight
+      type: sequenceFlow
+      name: Undo Flight
+      from: comp_flight
+      to: task_cancel_flight
+      properties: {}
+
+    - id: flow_comp_hotel
+      type: sequenceFlow
+      name: Undo Hotel
+      from: comp_hotel
+      to: task_cancel_hotel
+      properties: {}
