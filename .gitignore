@@ -78,6 +78,14 @@ mcp_servers/__pycache__/
 # Gmail OAuth Credentials (NEVER commit these!)
 backend/credentials.json
 backend/token.json
+credentials.json
+token.json
+
+# SQLite databases (contain sensitive workflow data, user info)
+*.db
+*.sqlite
+*.sqlite3
+agui_events.db
 
 # Context examples with personal email addresses (NEVER commit these!)
 context-examples/*.json

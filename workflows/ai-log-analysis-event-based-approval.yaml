@@ -1,0 +1,849 @@
+process:
+  id: process_1
+  name: AI Log Analysis with Event-Based Gateway Approval (Improved)
+  pools:
+    - id: pool_1
+      name: Automated DevOps Workflow with Event-Based Approval
+      x: 50
+      y: 50
+      width: 2200
+      height: 750
+      lanes:
+        - id: lane_1
+          name: User Interaction
+          height: 200
+        - id: lane_2
+          name: AI Analysis & Approval
+          height: 300
+        - id: lane_3
+          name: Execution & Deployment
+          height: 250
+
+  elements:
+    # ===== USER INTERACTION LANE =====
+
+    # Start Event
+    - id: element_1
+      type: startEvent
+      name: User Uploads Log
+      x: 120
+      y: 130
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: "User uploads log file through web interface or API"
+
+    # Receive Task - Upload Log File
+    - id: element_2
+      type: receiveTask
+      name: Receive Log File
+      x: 250
+      y: 130
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        messageRef: "logFileUpload"
+        timeout: "300000"
+        resultVariable: "logFileContent"
+        documentation: "Receive and validate uploaded log file - content is passed directly to AI analysis"
+        custom:
+          acceptedFormats: ".log, .txt"
+          maxFileSize: "10MB"
+          readFileContent: "true"
+
+    # ===== AI ANALYSIS LANE =====
+
+    # Agentic Task - Complete Log Analysis & Diagnostics
+    - id: element_4
+      type: agenticTask
+      name: Analyze & Generate Diagnostics
+      x: 390
+      y: 330
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        agentType: "diagnostic-analyzer"
+        model: "anthropic/claude-3.5-sonnet"
+        capabilities: "log-parsing, pattern-recognition, root-cause-analysis, remediation-generation, mcp-tool-usage"
+        confidenceThreshold: 0.85
+        maxRetries: 3
+        learningEnabled: true
+        allowCancellation: true
+        resultVariable: "diagnosticResults"
+        documentation: "AI agent performs complete log analysis, root cause identification, and remediation step generation"
+        custom:
+          inputVariable: "logFileContent"
+          mcpTools:
+            - "security-lookup"
+            - "kb-search"
+          analysisDepth: "comprehensive"
+          contextWindow: "16384"
+          temperature: "0.2"
+          maxIterations: 20
+          aguiEventCategories:
+            - "messaging"
+            - "tool"
+            - "lifecycle"
+          systemPrompt: |
+            You are a system diagnostics expert analyzing error logs.
+
+            TASK: Analyze error logs, research root causes, and generate complete remediation plans.
+
+            OUTPUT FORMAT (JSON):
+            {
+              "root_causes": [
+                {
+                  "issue": "Description of the issue",
+                  "severity": "critical|high|medium|low",
+                  "evidence": "Log excerpts, CVE references, KB articles",
+                  "cve_ids": ["CVE-2024-1234"]
+                }
+              ],
+              "remediation_steps": [
+                {
+                  "step_number": 1,
+                  "description": "Clear description of action",
+                  "executor_type": "script|api|manual|ansible",
+                  "details": {"command": "bash command here"},
+                  "risk_level": "low|medium|high",
+                  "requires_approval": true|false
+                }
+              ],
+              "estimated_downtime": "5 minutes",
+              "rollback_plan": "Detailed rollback procedure",
+              "kb_articles_referenced": ["RHSA-2025:22760"]
+            }
+
+    # Gateway - Valid Diagnostics?
+    - id: element_6
+      type: exclusiveGateway
+      name: Valid Results?
+      x: 710
+      y: 330
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        documentation: "Check if AI generated valid diagnostic steps"
+
+    # ===== EVENT-BASED GATEWAY APPROVAL (IMPROVED!) =====
+
+    # Send Approval Email (Real Gmail Sending)
+    - id: element_send_notifications
+      type: sendTask
+      name: Send Approval Email
+      x: 870
+      y: 330
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        messageType: "Email"
+        to: "${approvalRecipients.email}"
+        fromEmail: "${requester.email}"
+        subject: "🔔 Approval Required: AI Log Analysis - ${logFileName}"
+        messageBody: |
+          Hello,
+
+          AI has analyzed your log file and found issues requiring your approval.
+
+          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          📋 LOG ANALYSIS SUMMARY
+          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+          **Log File:** ${logFileName}
+          **Workflow ID:** ${workflowInstanceId}
+          **Requester:** ${requester.name} (${requester.email})
+          **Team:** ${requester.team}
+
+          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          ⚡ ACTION REQUIRED
+          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+          Please review the AI-generated diagnostic steps and approve or reject the remediation plan.
+
+          **OPTION 1: Email Approval**
+          Click one of these links to respond via email:
+          • APPROVE: ${webhookBaseUrl}/webhook/approval/${workflowInstanceId}?decision=approved
+          • REJECT: ${webhookBaseUrl}/webhook/approval/${workflowInstanceId}?decision=rejected
+
+          **OPTION 2: Manual UI Review**
+          Review full diagnostics in the web interface:
+          ${uiBaseUrl}/ui/approve/${workflowInstanceId}
+
+          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          ⏰ IMPORTANT: 2-Hour Timeout
+          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+          If no response is received within 2 hours, this will be automatically escalated to the senior engineer.
+
+          First response wins - the workflow will proceed with whichever approval method completes first (email or UI).
+
+          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+          Thank you,
+          BPMN Workflow Engine
+        useGmail: true
+        htmlFormat: false
+        priority: "High"
+        documentation: "Send approval request email with clickable approval/rejection links"
+
+    # ===== EVENT-BASED GATEWAY - FIRST APPROVAL WINS! =====
+    - id: element_ebg
+      type: eventBasedGateway
+      name: First Approval Wins
+      x: 1030
+      y: 330
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        documentation: |
+          EVENT-BASED GATEWAY: Race condition for approval
+
+          Waits for FIRST of three events:
+          1. Email approval webhook (user clicks approve/deny in email)
+          2. Manual UI approval (user completes approval form in web UI)
+          3. 2-hour timeout (auto-escalate if no response)
+
+          Whichever event happens FIRST wins!
+          - Winner's path continues to playbook generation
+          - Losers are automatically cancelled (no wasted resources)
+          - No need for consolidation script
+
+    # Path 1: Email Approval (Message Catch Event)
+    - id: element_email_approval
+      type: messageIntermediateCatchEvent
+      name: Email Approval Received
+      x: 1190
+      y: 230
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        messageRef: "diagnosticApproval"
+        correlationKey: "${workflowInstanceId}"
+        resultVariable: "emailApprovalDecision"
+        documentation: |
+          Wait for email approval webhook
+          User clicks [Approve] or [Deny] in email
+          Webhook sends message with decision
+
+          Message payload: {"decision": "approved|rejected", "comments": "..."}
+
+    # Path 2: Manual UI Approval (Message Catch Event)
+    - id: element_manual_approval
+      type: messageIntermediateCatchEvent
+      name: Manual UI Approval
+      x: 1190
+      y: 330
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        messageRef: "manualApprovalComplete"
+        correlationKey: "${workflowInstanceId}"
+        resultVariable: "manualApprovalDecision"
+        documentation: |
+          Wait for manual approval from web UI
+          DevOps team reviews diagnostics in UI
+          Completes approval form with decision
+          UI sends message when form submitted
+
+          Message payload: {"decision": "approved|rejected", "approver": "user@example.com", "comments": "..."}
+
+    # Path 3: Timeout Escalation (Timer Catch Event)
+    - id: element_timeout
+      type: timerIntermediateCatchEvent
+      name: No Response (2hr)
+      x: 1190
+      y: 430
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        timerDuration: PT2H
+        documentation: |
+          2-hour timeout for approval
+          If neither email nor manual approval received
+          Auto-escalate to senior engineer
+
+          This ensures workflow doesn't hang indefinitely
+
+    # ===== POST-APPROVAL DECISION HANDLING =====
+
+    # Script Task - Extract Decision from Winner
+    - id: element_extract_decision
+      type: scriptTask
+      name: Extract Decision
+      x: 1350
+      y: 330
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        scriptFormat: "Python"
+        resultVariable: "approvalDecision"
+        documentation: "Extract decision from whichever approval path won the race"
+        script: |
+          print('=== Extract Decision from Winner ===')
+          print('Available context keys: ' + str(list(context.keys())))
+
+          decision = 'rejected'  # Default to rejected for safety
+          approver = 'unknown'
+          approval_method = 'unknown'
+
+          # Check which path won
+          if 'emailApprovalDecision' in context:
+              email_data = context.get('emailApprovalDecision', {})
+              decision = email_data.get('decision', 'rejected')
+              approver = email_data.get('approver', 'email-user')
+              approval_method = 'email'
+              print('WINNER: Email approval')
+              print('Decision: ' + decision)
+          elif 'manualApprovalDecision' in context:
+              manual_data = context.get('manualApprovalDecision', {})
+              decision = manual_data.get('decision', 'rejected')
+              approver = manual_data.get('approver', 'manual-user')
+              approval_method = 'manual-ui'
+              print('WINNER: Manual UI approval')
+              print('Decision: ' + decision)
+          else:
+              # Timeout path won - auto-escalate
+              decision = 'escalated'
+              approver = 'timeout-escalation'
+              approval_method = 'timeout'
+              print('WINNER: Timeout - escalating')
+
+          result = decision
+
+          # Store metadata for notifications
+          context['approvalMethod'] = approval_method
+          context['approvedBy'] = approver
+          print('Final decision: ' + decision + ' by ' + approver + ' via ' + approval_method)
+
+    # Exclusive Gateway - Check Decision
+    - id: element_decision_check
+      type: exclusiveGateway
+      name: Decision?
+      x: 1430
+      y: 330
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        documentation: "Route based on approval decision: approved, rejected, or escalated"
+
+    # ===== TIMEOUT ESCALATION PATH =====
+    - id: element_escalate_task
+      type: sendTask
+      name: Escalate to Senior Engineer
+      x: 1430
+      y: 150
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        messageType: "Email"
+        to: "senior-engineer@company.com"
+        subject: "URGENT: Approval Timeout - ${logFileName}"
+        messageBody: |
+          URGENT: No approval received for log analysis within 2 hours.
+
+          Log file: ${logFileName}
+          Issues found: ${issueCount}
+          Severity: ${severityLevel}
+
+          Please review immediately and approve/reject manually:
+          ${approvalUrl}
+        useGmail: true
+        priority: "High"
+        documentation: "Escalate to senior engineer when timeout occurs"
+
+    - id: element_escalate_end
+      type: endEvent
+      name: Escalated for Review
+      x: 1590
+      y: 150
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        documentation: "Workflow escalated due to timeout - manual intervention required"
+
+    # ===== AI GENERATION LANE - ANSIBLE PLAYBOOK =====
+
+    # Script Task - Extract Diagnostic JSON
+    - id: element_10_new
+      type: scriptTask
+      name: Extract Diagnostic JSON
+      x: 1030
+      y: 580
+      poolId: pool_1
+      laneId: lane_3
+      properties:
+        scriptFormat: "Python"
+        resultVariable: "cleanDiagnostics"
+        documentation: "Extract diagnostic JSON from element_4 wrapper for element_9 to consume"
+        script: |
+          import json
+
+          print('=== Extract Diagnostic JSON ===')
+          diagnostic_results = context.get('diagnosticResults') or context.get('element_4_result')
+
+          if diagnostic_results and 'findings' in diagnostic_results:
+              findings = diagnostic_results.get('findings')
+              if findings and len(findings) > 0:
+                  llm_response = findings[0]
+                  try:
+                      parsed_json = json.loads(llm_response)
+                      result = parsed_json
+                      print('Successfully parsed diagnostics JSON')
+                  except:
+                      # Extract JSON from text
+                      start_idx = llm_response.find('{')
+                      if start_idx >= 0:
+                          brace_count = 0
+                          for i in range(start_idx, len(llm_response)):
+                              if llm_response[i] == '{':
+                                  brace_count += 1
+                              elif llm_response[i] == '}':
+                                  brace_count -= 1
+                                  if brace_count == 0:
+                                      json_str = llm_response[start_idx:i+1]
+                                      result = json.loads(json_str)
+                                      print('Extracted and parsed diagnostics JSON')
+                                      break
+              else:
+                  result = None
+          else:
+              result = None
+
+    # Agentic Task - Generate Ansible Playbook
+    - id: element_9
+      type: agenticTask
+      name: Generate Ansible Playbook
+      x: 1190
+      y: 580
+      poolId: pool_1
+      laneId: lane_3
+      properties:
+        agentType: "playbook-generator"
+        model: "anthropic/claude-3.5-sonnet"
+        capabilities: "ansible-generation, yaml-formatting, best-practices"
+        confidenceThreshold: 0.9
+        maxRetries: 2
+        resultVariable: "playbookContent"
+        documentation: "Generate Ansible playbook from approved diagnostic steps"
+        custom:
+          inputVariable: "cleanDiagnostics"
+          mcpTools:
+            - "ansible-validator"
+            - "yaml-linter"
+          systemPrompt: |
+            You are an Ansible playbook generator.
+
+            INPUT: cleanDiagnostics (JSON with root_causes and remediation_steps)
+            OUTPUT: Complete Ansible playbook YAML starting with "---"
+
+    # Script Task - Store Playbook
+    - id: element_12
+      type: scriptTask
+      name: Store Playbook
+      x: 1670
+      y: 580
+      poolId: pool_1
+      laneId: lane_3
+      properties:
+        scriptFormat: "Python"
+        resultVariable: "playbookPath"
+        documentation: "Store validated playbook in /tmp/playbooks directory"
+        script: |
+          import os
+          from datetime import datetime
+
+          raw_content = context.get('playbookContent') or context.get('element_9_result')
+
+          if raw_content:
+              # Extract playbook from wrapped result
+              playbook_content = None
+              if 'findings' in raw_content:
+                  findings = raw_content.get('findings')
+                  if findings and len(findings) > 0:
+                      playbook_content = str(findings[0])
+              else:
+                  playbook_content = str(raw_content)
+
+              if playbook_content and playbook_content.strip():
+                  playbook_dir = '/tmp/playbooks'
+                  os.makedirs(playbook_dir, exist_ok=True)
+
+                  timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                  filename = 'remediation_' + timestamp + '.yml'
+                  file_path = os.path.join(playbook_dir, filename)
+
+                  with open(file_path, 'w') as f:
+                      f.write(playbook_content)
+
+                  print('Playbook stored at: ' + file_path)
+                  result = file_path
+              else:
+                  result = None
+          else:
+              result = None
+
+    # Send Task - Success Notification
+    - id: element_14
+      type: sendTask
+      name: Send Success Notification
+      x: 1990
+      y: 580
+      poolId: pool_1
+      laneId: lane_3
+      properties:
+        messageType: "Email"
+        to: "${approvedBy}"
+        subject: "Log Analysis Complete - Playbook Ready"
+        messageBody: |
+          Your log analysis workflow has completed successfully.
+
+          Summary:
+          - Log file: ${logFileName}
+          - Approved by: ${approvedBy} via ${approvalMethod}
+          - Ansible playbook: ${playbookPath}
+
+          The playbook is ready for review and execution.
+        useGmail: true
+        documentation: "Notify approver of successful completion"
+
+    # End Event - Success
+    - id: element_15
+      type: endEvent
+      name: Workflow Complete
+      x: 2150
+      y: 580
+      poolId: pool_1
+      laneId: lane_3
+      properties:
+        documentation: "Successful completion - playbook generated"
+
+    # ===== ERROR HANDLING PATHS =====
+
+    # User Task - Manual Analysis Required
+    - id: element_16
+      type: userTask
+      name: Manual Analysis Required
+      x: 710
+      y: 500
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        assignee: "senior-sre@company.com"
+        priority: "Critical"
+        documentation: "AI couldn't generate valid diagnostics - manual intervention needed"
+
+    # End Event - Manual Escalation
+    - id: element_17
+      type: endEvent
+      name: Escalated to Human
+      x: 870
+      y: 500
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        documentation: "Workflow escalated for manual handling"
+
+    # Send Task - Rejection Notification
+    - id: element_18
+      type: sendTask
+      name: Notify Rejection
+      x: 1430
+      y: 450
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        messageType: "Email"
+        to: "${approvedBy}"
+        subject: "Diagnostic Steps Rejected"
+        messageBody: |
+          The AI-generated diagnostic steps were rejected.
+
+          Rejected by: ${approvedBy}
+          Method: ${approvalMethod}
+          Comments: ${approvalComments}
+        documentation: "Notify of rejection"
+
+    # End Event - Rejected
+    - id: element_19
+      type: endEvent
+      name: Rejected by User
+      x: 1590
+      y: 450
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        documentation: "User rejected the diagnostic steps"
+
+    # ===== TEXT ANNOTATIONS =====
+    - id: annot_1
+      type: textAnnotation
+      name: Event-Based Gateway
+      x: 900
+      y: 220
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        text: |
+          EVENT-BASED GATEWAY:
+          First approval wins race!
+
+          • Email approval, OR
+          • Manual UI approval, OR
+          • 2-hour timeout
+
+          Winner continues immediately.
+          Losers auto-cancelled.
+          No consolidation needed!
+
+    - id: annot_2
+      type: textAnnotation
+      name: Why Event-Based Gateway
+      x: 750
+      y: 100
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        text: |
+          IMPROVEMENTS vs Original:
+
+          ✅ Automatic cancellation
+          ✅ True race condition
+          ✅ Built-in timeout handling
+          ✅ No consolidation script
+          ✅ Cleaner semantics
+          ✅ Better resource usage
+
+    - id: annot_3
+      type: textAnnotation
+      name: Message Correlation
+      x: 1260
+      y: 220
+      poolId: pool_1
+      laneId: lane_1
+      properties:
+        text: |
+          Message Catch Events:
+          Each waits for specific
+          message with correlation key.
+
+          correlationKey: workflowInstanceId
+
+          Email: diagnosticApproval
+          Manual: manualApprovalComplete
+
+    - id: annot_4
+      type: textAnnotation
+      name: Timeout Escalation
+      x: 1260
+      y: 480
+      poolId: pool_1
+      laneId: lane_2
+      properties:
+        text: |
+          Timer Catch Event:
+          If no approval in 2 hours,
+          timeout path wins.
+
+          Auto-escalate to senior
+          engineer for manual review.
+
+          Prevents workflow hanging!
+
+  connections:
+    # Main flow
+    - id: conn_1
+      type: sequenceFlow
+      name: ""
+      from: element_1
+      to: element_2
+
+    - id: conn_2
+      type: sequenceFlow
+      name: "file uploaded"
+      from: element_2
+      to: element_4
+
+    - id: conn_4
+      type: sequenceFlow
+      name: ""
+      from: element_4
+      to: element_6
+
+    # Valid diagnostics - send notifications
+    - id: conn_6
+      type: sequenceFlow
+      name: "yes"
+      from: element_6
+      to: element_send_notifications
+      properties:
+        condition: ""
+
+    # Invalid diagnostics - manual review
+    - id: conn_7
+      type: sequenceFlow
+      name: "no"
+      from: element_6
+      to: element_16
+      properties:
+        condition: "${validationResult.valid} == false"
+
+    - id: conn_8
+      type: sequenceFlow
+      name: ""
+      from: element_16
+      to: element_17
+
+    # Send notifications to Event-Based Gateway
+    - id: conn_notifications_to_ebg
+      type: sequenceFlow
+      name: ""
+      from: element_send_notifications
+      to: element_ebg
+
+    # Event-Based Gateway outgoing paths (to 3 competing events)
+    - id: conn_ebg_email
+      type: sequenceFlow
+      name: "email path"
+      from: element_ebg
+      to: element_email_approval
+      properties:
+        documentation: "Wait for email approval webhook"
+
+    - id: conn_ebg_manual
+      type: sequenceFlow
+      name: "manual path"
+      from: element_ebg
+      to: element_manual_approval
+      properties:
+        documentation: "Wait for manual UI approval"
+
+    - id: conn_ebg_timeout
+      type: sequenceFlow
+      name: "timeout path"
+      from: element_ebg
+      to: element_timeout
+      properties:
+        documentation: "Wait for 2-hour timeout"
+
+    # All three paths merge to decision extraction
+    - id: conn_email_to_extract
+      type: sequenceFlow
+      name: "email won"
+      from: element_email_approval
+      to: element_extract_decision
+
+    - id: conn_manual_to_extract
+      type: sequenceFlow
+      name: "manual won"
+      from: element_manual_approval
+      to: element_extract_decision
+
+    - id: conn_timeout_to_extract
+      type: sequenceFlow
+      name: "timeout won"
+      from: element_timeout
+      to: element_extract_decision
+
+    # Extract decision to gateway
+    - id: conn_extract_to_check
+      type: sequenceFlow
+      name: ""
+      from: element_extract_decision
+      to: element_decision_check
+
+    # Decision gateway paths
+    - id: conn_approved
+      type: sequenceFlow
+      name: "approved"
+      from: element_decision_check
+      to: element_10_new
+      properties:
+        condition: "${approvalDecision} == 'approved'"
+
+    - id: conn_rejected
+      type: sequenceFlow
+      name: "rejected"
+      from: element_decision_check
+      to: element_18
+      properties:
+        condition: "${approvalDecision} == 'rejected'"
+
+    - id: conn_escalated
+      type: sequenceFlow
+      name: "escalated"
+      from: element_decision_check
+      to: element_escalate_task
+      properties:
+        condition: "${approvalDecision} == 'escalated'"
+
+    # Rejection path
+    - id: conn_reject_notify
+      type: sequenceFlow
+      name: ""
+      from: element_18
+      to: element_19
+
+    # Escalation path
+    - id: conn_escalate_end
+      type: sequenceFlow
+      name: ""
+      from: element_escalate_task
+      to: element_escalate_end
+
+    # Approved path - generate playbook
+    - id: conn_extract_to_generate
+      type: sequenceFlow
+      name: ""
+      from: element_10_new
+      to: element_9
+
+    - id: conn_generate_to_store
+      type: sequenceFlow
+      name: ""
+      from: element_9
+      to: element_12
+
+    - id: conn_store_to_notify
+      type: sequenceFlow
+      name: ""
+      from: element_12
+      to: element_14
+
+    - id: conn_notify_to_end
+      type: sequenceFlow
+      name: ""
+      from: element_14
+      to: element_15
+
+    # ===== ASSOCIATIONS =====
+    - id: assoc_1
+      type: association
+      name: ""
+      from: annot_1
+      to: element_ebg
+      properties:
+        direction: none
+
+    - id: assoc_2
+      type: association
+      name: ""
+      from: annot_2
+      to: element_send_notifications
+      properties:
+        direction: none
+
+    - id: assoc_3
+      type: association
+      name: ""
+      from: annot_3
+      to: element_email_approval
+      properties:
+        direction: none
+
+    - id: assoc_4
+      type: association
+      name: ""
+      from: annot_4
+      to: element_timeout
+      properties:
+        direction: none

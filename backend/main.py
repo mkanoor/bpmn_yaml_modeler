@@ -6,7 +6,7 @@ import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, HTTPException, Request
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, HTTPException, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -797,6 +797,154 @@ async def deny_via_email(message_ref: str, correlation_key: str):
 
     except Exception as e:
         logger.error(f"Error processing email denial: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ========================================
+# Email Approval Webhook (Simple Query Parameter Version)
+# ========================================
+
+@app.get("/webhook/approval/{workflow_instance_id}")
+async def email_approval_webhook(
+    workflow_instance_id: str,
+    decision: str = Query(..., description="approved or rejected")
+):
+    """
+    Simple email approval webhook for Event-Based Gateway workflows
+
+    Called when user clicks approval/rejection link in email.
+    Sends message to diagnosticApproval queue with workflow instance ID correlation.
+
+    Example:
+        GET /webhook/approval/wf-2026-001?decision=approved
+    """
+    try:
+        logger.info(f"📧 Email approval webhook triggered: {workflow_instance_id} → {decision}")
+
+        # Validate decision
+        if decision not in ["approved", "rejected"]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid decision: {decision}. Must be 'approved' or 'rejected'"
+            )
+
+        # Prepare message payload
+        message_payload = {
+            "decision": decision,
+            "approver": "email-user",  # Could be extracted from auth if available
+            "method": "email-link",
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+        # Send message to message queue for Event-Based Gateway
+        # Message ref: "diagnosticApproval" (from workflow YAML)
+        # Correlation key: workflow instance ID
+        message_ref = "diagnosticApproval"
+        correlation_key = workflow_instance_id
+        correlation_id = f"{message_ref}:{correlation_key}"
+
+        # Find the workflow instance
+        if workflow_instance_id not in active_workflows:
+            logger.error(f"❌ Workflow instance not found: {workflow_instance_id}")
+            raise HTTPException(status_code=404, detail=f"Workflow instance not found: {workflow_instance_id}")
+
+        engine = active_workflows[workflow_instance_id]
+
+        # Create queue if it doesn't exist
+        if correlation_id not in engine.message_queues:
+            engine.message_queues[correlation_id] = asyncio.Queue()
+
+        # Put message in queue
+        await engine.message_queues[correlation_id].put(message_payload)
+
+        logger.info(f"✅ Message sent to queue: {correlation_id}")
+        logger.info(f"   Decision: {decision}")
+        logger.info(f"   Payload: {message_payload}")
+
+        # Return success HTML page
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Approval {'Accepted' if decision == 'approved' else 'Rejected'}</title>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <style>
+                body {{
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+                    max-width: 600px;
+                    margin: 50px auto;
+                    padding: 20px;
+                    text-align: center;
+                    background: #f5f5f5;
+                }}
+                .container {{
+                    background: white;
+                    border-radius: 8px;
+                    padding: 40px;
+                    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                }}
+                h1 {{
+                    color: {'#27ae60' if decision == 'approved' else '#e74c3c'};
+                    margin-bottom: 10px;
+                    font-size: 32px;
+                }}
+                .icon {{
+                    font-size: 64px;
+                    margin-bottom: 20px;
+                }}
+                p {{
+                    color: #555;
+                    line-height: 1.6;
+                    margin-bottom: 15px;
+                }}
+                .info {{
+                    background: #f8f9fa;
+                    border-left: 4px solid #3498db;
+                    padding: 15px;
+                    margin: 25px 0;
+                    text-align: left;
+                    border-radius: 4px;
+                }}
+                .info p {{
+                    margin: 5px 0;
+                    font-size: 14px;
+                }}
+                .info strong {{
+                    color: #2c3e50;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="icon">{'✅' if decision == 'approved' else '❌'}</div>
+                <h1>{'Approved!' if decision == 'approved' else 'Rejected'}</h1>
+                <p>Your decision has been recorded successfully.</p>
+
+                <div class="info">
+                    <p><strong>Workflow ID:</strong> {workflow_instance_id}</p>
+                    <p><strong>Decision:</strong> {decision.upper()}</p>
+                    <p><strong>Method:</strong> Email Link</p>
+                </div>
+
+                <p style="margin-top: 30px; font-size: 14px; color: #7f8c8d;">
+                    {'The workflow will now proceed with playbook generation.' if decision == 'approved' else 'The workflow has been stopped. No playbook will be generated.'}
+                </p>
+
+                <p style="margin-top: 20px; font-size: 12px; color: #95a5a6;">
+                    You can safely close this window.
+                </p>
+            </div>
+        </body>
+        </html>
+        """
+
+        return HTMLResponse(content=html_content)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error processing email approval: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

@@ -26,7 +26,19 @@ class ElementType(str, Enum):
     ESCALATION_BOUNDARY_EVENT = "escalationBoundaryEvent"
     SIGNAL_BOUNDARY_EVENT = "signalBoundaryEvent"
     COMPENSATION_BOUNDARY_EVENT = "compensationBoundaryEvent"
+    MESSAGE_BOUNDARY_EVENT = "messageBoundaryEvent"
+    # Intermediate Events
     COMPENSATION_INTERMEDIATE_THROW_EVENT = "compensationIntermediateThrowEvent"
+    MESSAGE_INTERMEDIATE_CATCH_EVENT = "messageIntermediateCatchEvent"
+    MESSAGE_INTERMEDIATE_THROW_EVENT = "messageIntermediateThrowEvent"
+    LINK_INTERMEDIATE_CATCH_EVENT = "linkIntermediateCatchEvent"
+    LINK_INTERMEDIATE_THROW_EVENT = "linkIntermediateThrowEvent"
+    # Specialized End Events
+    ERROR_END_EVENT = "errorEndEvent"
+    TERMINATE_END_EVENT = "terminateEndEvent"
+    ESCALATION_END_EVENT = "escalationEndEvent"
+    SIGNAL_END_EVENT = "signalEndEvent"
+    MESSAGE_END_EVENT = "messageEndEvent"
     # Tasks
     TASK = "task"
     USER_TASK = "userTask"
@@ -44,12 +56,19 @@ class ElementType(str, Enum):
     EXCLUSIVE_GATEWAY = "exclusiveGateway"
     PARALLEL_GATEWAY = "parallelGateway"
     INCLUSIVE_GATEWAY = "inclusiveGateway"
+    EVENT_BASED_GATEWAY = "eventBasedGateway"
+    # Data Objects
+    DATA_OBJECT = "dataObject"
+    DATA_STORE = "dataStore"
+    # Artifacts
+    TEXT_ANNOTATION = "textAnnotation"
 
 
 class ConnectionType(str, Enum):
     """BPMN connection types"""
     SEQUENCE_FLOW = "sequenceFlow"
     MESSAGE_FLOW = "messageFlow"
+    ASSOCIATION = "association"
 
 
 class ExecutionStatus(str, Enum):
@@ -120,7 +139,8 @@ class Element(BaseModel):
         return self.type in [
             ElementType.EXCLUSIVE_GATEWAY,
             ElementType.PARALLEL_GATEWAY,
-            ElementType.INCLUSIVE_GATEWAY
+            ElementType.INCLUSIVE_GATEWAY,
+            ElementType.EVENT_BASED_GATEWAY
         ]
 
     def is_event(self) -> bool:
@@ -130,7 +150,22 @@ class Element(BaseModel):
             ElementType.END_EVENT,
             ElementType.INTERMEDIATE_EVENT,
             ElementType.TIMER_INTERMEDIATE_CATCH_EVENT,
-            ElementType.COMPENSATION_INTERMEDIATE_THROW_EVENT
+            ElementType.MESSAGE_START_EVENT,
+            ElementType.SIGNAL_START_EVENT,
+            ElementType.ERROR_START_EVENT,
+            ElementType.ESCALATION_START_EVENT,
+            ElementType.COMPENSATION_START_EVENT,
+            ElementType.TIMER_START_EVENT,
+            ElementType.MESSAGE_INTERMEDIATE_CATCH_EVENT,
+            ElementType.MESSAGE_INTERMEDIATE_THROW_EVENT,
+            ElementType.LINK_INTERMEDIATE_CATCH_EVENT,
+            ElementType.LINK_INTERMEDIATE_THROW_EVENT,
+            ElementType.COMPENSATION_INTERMEDIATE_THROW_EVENT,
+            ElementType.ERROR_END_EVENT,
+            ElementType.TERMINATE_END_EVENT,
+            ElementType.ESCALATION_END_EVENT,
+            ElementType.SIGNAL_END_EVENT,
+            ElementType.MESSAGE_END_EVENT
         ]
 
 

@@ -1,59 +1,60 @@
 #!/bin/bash
 
-# BPMN Workflow Execution Backend - Start Script
-#
-# Usage:
-#   ./start-backend.sh          # Normal start
-#   ./start-backend.sh --reauth # Delete Gmail token and re-authenticate
+# Start BPMN Backend Server
+# This script starts the backend/main.py server with MCP integration
 
-echo "========================================="
-echo "  BPMN Workflow Execution Backend"
-echo "========================================="
-echo ""
+echo "🚀 Starting BPMN Backend Server..."
 
-# Check if Python is installed
-if ! command -v python3 &> /dev/null; then
-    echo "❌ Python 3 is not installed!"
-    echo "Please install Python 3.9 or higher"
+# Check if port 8000 is already in use
+if lsof -ti:8000 >/dev/null 2>&1; then
+    echo "⚠️  Port 8000 is already in use!"
+    echo "    Run './stop-backend.sh' first to stop the existing server."
     exit 1
 fi
 
-echo "✅ Python found: $(python3 --version)"
-echo ""
-
-# Navigate to backend directory
-cd backend
-
-# Check for --reauth flag
-if [ "$1" = "--reauth" ] || [ "$1" = "-r" ]; then
-    if [ -f "token.json" ]; then
-        echo "🔑 Deleting Gmail token (will re-authenticate on first email send)..."
-        rm token.json
-        echo "✅ Token deleted"
-        echo ""
-    else
-        echo "ℹ️  No token.json to delete"
-        echo ""
-    fi
+# Check if virtual environment exists
+if [ ! -d "venv" ]; then
+    echo "❌ Virtual environment not found!"
+    echo "    Please create it first: python3 -m venv venv"
+    exit 1
 fi
 
-# Check if requirements are installed
-echo "📦 Checking dependencies..."
-if ! python3 -c "import fastapi" 2>/dev/null; then
-    echo "⚠️  Dependencies not installed. Installing..."
-    pip3 install -r requirements.txt
-    echo ""
+# Activate virtual environment
+source venv/bin/activate
+
+# Check if backend/main.py exists
+if [ ! -f "backend/main.py" ]; then
+    echo "❌ backend/main.py not found!"
+    exit 1
 fi
 
-echo "✅ Dependencies ready"
-echo ""
+# Create log directory if it doesn't exist
+mkdir -p logs
 
 # Start the server
-echo "🚀 Starting backend server on http://localhost:8000"
-echo ""
-echo "Press Ctrl+C to stop the server"
-echo ""
-echo "========================================="
-echo ""
+LOG_FILE="logs/backend-$(date +%Y%m%d-%H%M%S).log"
+echo "📝 Logging to: $LOG_FILE"
 
-python3 main.py
+venv/bin/python3 backend/main.py > "$LOG_FILE" 2>&1 &
+SERVER_PID=$!
+
+echo "⏳ Waiting for server to start..."
+sleep 3
+
+# Check if server started successfully
+if lsof -ti:8000 >/dev/null 2>&1; then
+    echo "✅ Backend server started successfully!"
+    echo "📍 Server PID: $SERVER_PID"
+    echo "🌐 Server URL: http://localhost:8000"
+    echo "📊 API Docs: http://localhost:8000/docs"
+    echo "🔌 WebSocket: ws://localhost:8000/ws"
+    echo ""
+    echo "💡 Tips:"
+    echo "   - View logs: tail -f $LOG_FILE"
+    echo "   - Stop server: ./stop-backend.sh"
+    echo "   - Test workflow: python3 test_simple.py workflows/[workflow].yaml context-examples/[context].json"
+else
+    echo "❌ Server failed to start!"
+    echo "📋 Check logs: cat $LOG_FILE"
+    exit 1
+fi
