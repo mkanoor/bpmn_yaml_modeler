@@ -1,0 +1,156 @@
+process:
+  id: multi_instance_parallel
+  name: Multi-Instance Parallel Processing
+
+  pools:
+    - id: pool1
+      name: Batch Processing Pool
+      x: 50
+      y: 100
+      width: 1200
+      height: 300
+      lanes:
+        - id: lane1
+          name: Processing Lane
+          height: 300
+
+  elements:
+    - id: start1
+      type: startEvent
+      name: Start Batch
+      x: 150
+      y: 250
+      poolId: pool1
+      laneId: lane1
+
+    - id: task_batch_process
+      type: scriptTask
+      name: Process Item
+      x: 350
+      y: 220
+      poolId: pool1
+      laneId: lane1
+      properties:
+        # Multi-Instance Configuration
+        isMultiInstance: true
+        isSequential: false  # Parallel execution
+        inputCollection: orders  # Collection from context
+        inputElement: order  # Variable name for each item
+        outputCollection: processedOrders  # Where to store results
+        outputElement: result  # What to collect from each iteration
+
+        # Script for each instance
+        scriptFormat: python
+        script: |
+          import time
+
+          # Each instance processes one order
+          print(f"🔄 Processing order {loopCounter + 1}/{nrOfInstances}")
+          print(f"   Order ID: {order['id']}")
+          print(f"   Customer: {order['customer']}")
+          print(f"   Items: {len(order['items'])}")
+
+          # Simulate processing time (different for each order)
+          processing_time = order.get('processing_time', 1)
+          time.sleep(processing_time)
+
+          # Calculate order total
+          total = sum(item['price'] * item['quantity'] for item in order['items'])
+
+          # Result for this instance (will be collected into processedOrders)
+          result = {
+            'orderId': order['id'],
+            'customer': order['customer'],
+            'total': total,
+            'status': 'processed',
+            'iteration': loopCounter,
+            'processedAt': time.strftime('%Y-%m-%d %H:%M:%S')
+          }
+
+          print(f"✅ Order {order['id']} processed: ${total:.2f}")
+
+    - id: task_generate_summary
+      type: scriptTask
+      name: Generate Summary Report
+      x: 650
+      y: 220
+      poolId: pool1
+      laneId: lane1
+      properties:
+        scriptFormat: python
+        script: |
+          # All parallel instances have completed
+          # Results are in processedOrders array
+
+          print("\n" + "="*60)
+          print("📊 BATCH PROCESSING SUMMARY")
+          print("="*60)
+
+          total_orders = len(processedOrders)
+          total_revenue = sum(order['total'] for order in processedOrders)
+          average_order = total_revenue / total_orders if total_orders > 0 else 0
+
+          print(f"Total Orders Processed: {total_orders}")
+          print(f"Total Revenue: ${total_revenue:.2f}")
+          print(f"Average Order Value: ${average_order:.2f}")
+          print()
+
+          # Print each order
+          for order in processedOrders:
+            print(f"  {order['orderId']}: {order['customer']} - ${order['total']:.2f} ({order['status']})")
+
+          print("="*60)
+
+          # Store summary in context
+          summary = {
+            'totalOrders': total_orders,
+            'totalRevenue': total_revenue,
+            'averageOrder': average_order,
+            'orders': processedOrders
+          }
+
+    - id: task_send_notification
+      type: sendTask
+      name: Email Summary
+      x: 950
+      y: 220
+      poolId: pool1
+      laneId: lane1
+      properties:
+        messageType: Email
+        to: admin@example.com
+        subject: "Batch Processing Complete - ${len(processedOrders)} Orders"
+        messageBody: |
+          Batch processing has completed successfully!
+
+          Summary:
+          - Total Orders: ${summary['totalOrders']}
+          - Total Revenue: $${summary['totalRevenue']:.2f}
+          - Average Order: $${summary['averageOrder']:.2f}
+
+          See attached for detailed results.
+
+    - id: end1
+      type: endEvent
+      name: Batch Complete
+      x: 1150
+      y: 250
+      poolId: pool1
+      laneId: lane1
+
+  connections:
+    - id: conn1
+      from: start1
+      to: task_batch_process
+
+    - id: conn2
+      from: task_batch_process
+      to: task_generate_summary
+
+    - id: conn3
+      from: task_generate_summary
+      to: task_send_notification
+
+    - id: conn4
+      from: task_send_notification
+      to: end1

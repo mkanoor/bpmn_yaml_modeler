@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BPMN Modeler</title>
+    <title>AAP BPMN Modeler</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
     <div class="app-container">
         <header>
-            <h1>BPMN Modeler</h1>
+            <h1>AAP BPMN Modeler <span class="version">v1.0.0</span></h1>
             <div class="theme-selector">
                 <label for="themeSelect">Theme:</label>
                 <select id="themeSelect">
@@ -214,12 +214,21 @@
                     <div class="palette-item" data-type="agenticTask" title="Agentic Task - AI/LLM-powered task using MCP tools for intelligent automation">
                         <svg width="40" height="40">
                             <rect x="5" y="10" width="30" height="20" rx="5" fill="white" stroke="#000" stroke-width="2"/>
-                            <!-- Brain icon -->
-                            <path d="M 10 15 C 9.5 14.5 9.5 14 10 13.5 C 10.5 13 11.5 13 12 13.5 C 12.3 13 12.7 13 13 13.5 C 13.5 13 14.5 13 15 13.5 C 15.5 14 15.5 14.5 15 15 C 15 15.5 15 16 14.5 16.5 C 14 17 13.5 17 13 16.5 C 12.7 17 12.3 17 12 16.5 C 11.5 17 11 17 10.5 16.5 C 10 16 10 15.5 10 15 Z" fill="none" stroke="#ec4899" stroke-width="1.2"/>
-                            <path d="M 11 14.5 Q 11.5 15 11.5 15.5" fill="none" stroke="#ec4899" stroke-width="0.8"/>
-                            <path d="M 12.5 14 Q 13 14.5 13 15" fill="none" stroke="#ec4899" stroke-width="0.8"/>
-                            <path d="M 14 14.5 Q 14.5 15 14.5 15.5" fill="none" stroke="#ec4899" stroke-width="0.8"/>
-                            <line x1="12.5" y1="13.5" x2="12.5" y2="16.5" stroke="#ec4899" stroke-width="0.6" stroke-dasharray="1,0.5"/>
+                            <!-- Robot icon (AI Agent) -->
+                            <g transform="translate(20, 20)">
+                                <!-- Robot head -->
+                                <rect x="-5" y="-5" width="10" height="8" rx="2" fill="none" stroke="#ec4899" stroke-width="1.5"/>
+                                <!-- Antenna -->
+                                <line x1="0" y1="-5" x2="0" y2="-8" stroke="#ec4899" stroke-width="1.5"/>
+                                <circle cx="0" cy="-8" r="1.2" fill="#ec4899"/>
+                                <!-- Eyes -->
+                                <circle cx="-2.5" cy="-2" r="1" fill="#ec4899"/>
+                                <circle cx="2.5" cy="-2" r="1" fill="#ec4899"/>
+                                <!-- Mouth -->
+                                <line x1="-2.5" y1="1.5" x2="2.5" y2="1.5" stroke="#ec4899" stroke-width="1.5"/>
+                                <!-- Body indicator -->
+                                <line x1="0" y1="3" x2="0" y2="5" stroke="#ec4899" stroke-width="1.5"/>
+                            </g>
                         </svg>
                         <span>Agentic Task</span>
                     </div>

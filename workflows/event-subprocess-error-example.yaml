@@ -1,0 +1,229 @@
+process:
+  id: event_subprocess_error_demo
+  name: Event Sub-Process - Error Handling Example
+
+  pools:
+    - id: pool1
+      name: Payment Processing Pool
+      x: 50
+      y: 100
+      width: 1400
+      height: 600
+      lanes:
+        - id: lane1
+          name: Main Process
+          height: 300
+        - id: lane2
+          name: Error Recovery
+          height: 300
+
+  elements:
+    # Main Process Flow - Will Fail
+    - id: start1
+      type: startEvent
+      name: Start Payment
+      x: 150
+      y: 200
+      poolId: pool1
+      laneId: lane1
+
+    - id: task_validate_payment
+      type: scriptTask
+      name: Validate Payment Details
+      x: 300
+      y: 170
+      poolId: pool1
+      laneId: lane1
+      properties:
+        scriptFormat: python
+        script: |
+          import time
+          print(f"\n💳 Validating payment for order: {order_id}")
+          print(f"   Amount: ${payment_amount}")
+          print(f"   Card: {card_number}")
+          time.sleep(1)
+
+          # Check if card is valid
+          if card_number.startswith("4111"):
+            print("✅ Card validation successful")
+            card_valid = True
+          else:
+            print("❌ Invalid card number detected")
+            card_valid = False
+
+    - id: task_process_payment
+      type: scriptTask
+      name: Process Payment (Will Fail)
+      x: 500
+      y: 170
+      poolId: pool1
+      laneId: lane1
+      properties:
+        scriptFormat: python
+        script: |
+          import time
+          print(f"\n💰 Processing payment: ${payment_amount}")
+          time.sleep(2)
+
+          # Simulate payment gateway failure
+          if payment_amount > 1000:
+            print("❌ PAYMENT FAILED: Amount exceeds limit")
+            print("   Triggering error event...")
+            # Raise an error to trigger the Event Sub-Process
+            raise Exception("PaymentLimitExceeded")
+          else:
+            print("✅ Payment processed successfully")
+            payment_status = "completed"
+
+    - id: task_send_confirmation
+      type: scriptTask
+      name: Send Confirmation
+      x: 700
+      y: 170
+      poolId: pool1
+      laneId: lane1
+      properties:
+        scriptFormat: python
+        script: |
+          import time
+          print(f"\n📧 Sending payment confirmation")
+          print(f"   Order: {order_id}")
+          print(f"   Amount: ${payment_amount}")
+          time.sleep(1)
+          confirmation_sent = True
+          print("✅ Confirmation email sent")
+
+    - id: end1
+      type: endEvent
+      name: Payment Complete
+      x: 900
+      y: 200
+      poolId: pool1
+      laneId: lane1
+
+    # Event Sub-Process (Error Handler) - Triggers on Payment Failure
+    # This subprocess will catch the error and execute recovery steps
+    - id: event_subprocess_error
+      type: eventSubProcess
+      name: Payment Error Recovery Handler
+      x: 500
+      y: 525
+      poolId: pool1
+      laneId: lane2
+      width: 700
+      height: 150
+      properties:
+        isInterrupting: true  # Interrupting - stops main process on error
+      childElements:
+        # Child element coordinates are RELATIVE to subprocess center (0, 0)
+        - id: esp_error_start
+          type: errorStartEvent
+          name: On Payment Error
+          x: -280
+          y: 0
+          poolId: pool1
+          laneId: lane2
+          properties:
+            errorCode: ""  # Empty = catch all errors
+
+        - id: esp_task_log_error
+          type: scriptTask
+          name: Log Error Details
+          x: -120
+          y: -5
+          poolId: pool1
+          laneId: lane2
+          properties:
+            scriptFormat: python
+            script: |
+              import time
+              print("\n" + "="*60)
+              print("🚨 ERROR RECOVERY: Payment processing failed!")
+              print("="*60)
+              print(f"   Order ID: {order_id}")
+              print(f"   Amount: ${payment_amount}")
+              print(f"   Card: {card_number}")
+              print(f"   Reason: Payment limit exceeded")
+              time.sleep(1)
+              error_logged = True
+              print("📝 Error logged to database")
+              print("="*60)
+
+        - id: esp_task_notify_customer
+          type: scriptTask
+          name: Notify Customer of Failure
+          x: 60
+          y: -5
+          poolId: pool1
+          laneId: lane2
+          properties:
+            scriptFormat: python
+            script: |
+              import time
+              print(f"\n📧 Sending failure notification to customer")
+              print(f"   Email: {customer_email}")
+              print(f"   Message: Payment of ${payment_amount} could not be processed")
+              print(f"   Suggestion: Please use a different payment method")
+              time.sleep(1)
+              notification_sent = True
+              print("✅ Customer notified of payment failure")
+
+        - id: esp_task_refund
+          type: scriptTask
+          name: Initiate Refund Process
+          x: 220
+          y: -5
+          poolId: pool1
+          laneId: lane2
+          properties:
+            scriptFormat: python
+            script: |
+              import time
+              print(f"\n💸 Initiating automatic refund")
+              print(f"   Amount: ${payment_amount}")
+              print(f"   Order: {order_id}")
+              time.sleep(1)
+              refund_initiated = True
+              print("✅ Refund process started")
+
+        - id: esp_end
+          type: endEvent
+          name: Error Recovery Complete
+          x: 280
+          y: 0
+          poolId: pool1
+          laneId: lane2
+
+      childConnections:
+        - id: esp_conn1
+          from: esp_error_start
+          to: esp_task_log_error
+
+        - id: esp_conn2
+          from: esp_task_log_error
+          to: esp_task_notify_customer
+
+        - id: esp_conn3
+          from: esp_task_notify_customer
+          to: esp_task_refund
+
+        - id: esp_conn4
+          from: esp_task_refund
+          to: esp_end
+
+  connections:
+    - id: conn1
+      from: start1
+      to: task_validate_payment
+
+    - id: conn2
+      from: task_validate_payment
+      to: task_process_payment
+
+    - id: conn3
+      from: task_process_payment
+      to: task_send_confirmation
+
+    - id: conn4
+      from: task_send_confirmation
+      to: end1

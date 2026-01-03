@@ -214,7 +214,8 @@ class ScriptTaskExecutor(TaskExecutor):
             if script_format.lower() == 'python':
                 # Import commonly used modules
                 import random
-                from datetime import datetime, timedelta, date, time
+                import time as time_module
+                from datetime import datetime, timedelta, date, time as time_class, timezone
 
                 # Create safe globals with limited builtins
                 safe_builtins = {
@@ -242,6 +243,7 @@ class ScriptTaskExecutor(TaskExecutor):
                     'isinstance': isinstance,
                     'enumerate': enumerate,
                     'open': open,  # Allow file operations
+                    'globals': globals,  # Allow access to global variables
                     'True': True,
                     'False': False,
                     'None': None,
@@ -254,6 +256,7 @@ class ScriptTaskExecutor(TaskExecutor):
                     'KeyError': KeyError,
                     'IndexError': IndexError,
                     'AttributeError': AttributeError,
+                    'NameError': NameError,  # Allow catching NameError
                 }
 
                 script_globals = {
@@ -262,11 +265,11 @@ class ScriptTaskExecutor(TaskExecutor):
                     'context': context,
                     # Provide commonly used modules
                     'random': random,
+                    'time': time_module,  # The time module for time.sleep(), time.strftime(), etc.
                     'datetime': datetime,
                     'timezone': timezone,
                     'timedelta': timedelta,
                     'date': date,
-                    'time': time,
                 }
 
                 # Unpack context variables directly into globals for easy access
@@ -280,6 +283,15 @@ class ScriptTaskExecutor(TaskExecutor):
                 loop = asyncio.get_event_loop()
                 await loop.run_in_executor(None, exec, script, script_globals)
                 logger.info(f"Script execution completed")
+
+                # Copy all modified/new variables back to context
+                # (Exclude builtins, modules, and the 'context' reference itself)
+                excluded_keys = {'__builtins__', '__name__', 'context', 'random', 'datetime',
+                                'timezone', 'timedelta', 'date', 'time'}
+                for key, value in script_globals.items():
+                    if key not in excluded_keys and not key.startswith('__'):
+                        context[key] = value
+
                 result = script_globals.get('result', None)
                 logger.info(f"Script result: {result}")
             else:

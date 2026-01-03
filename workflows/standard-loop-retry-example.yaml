@@ -1,0 +1,175 @@
+process:
+  id: standard_loop_retry
+  name: API Retry with Standard Loop
+
+  pools:
+    - id: pool1
+      name: API Integration Pool
+      x: 50
+      y: 100
+      width: 1000
+      height: 300
+      lanes:
+        - id: lane1
+          name: Integration Lane
+          height: 300
+
+  elements:
+    - id: start1
+      type: startEvent
+      name: Start API Call
+      x: 150
+      y: 250
+      poolId: pool1
+      laneId: lane1
+
+    - id: task_call_api
+      type: scriptTask
+      name: Call External API
+      x: 350
+      y: 220
+      poolId: pool1
+      laneId: lane1
+      properties:
+        # Standard Loop Configuration
+        loopCondition: "retry_count < max_retries and not success"
+        loopMaximum: 5
+
+        # Script for each iteration
+        scriptFormat: python
+        script: |
+          import random
+          import time
+
+          # Initialize on first iteration
+          if loopCounter == 0:
+            retry_count = 0
+            success = False
+            max_retries = 3
+          else:
+            # Get values from previous iteration
+            retry_count = loopCounter
+
+          print(f"\n🔄 API Call Attempt {retry_count + 1}/{max_retries}")
+
+          # Simulate API call (80% failure rate on first try, then decreasing)
+          failure_rate = max(0.2, 0.8 - (retry_count * 0.3))
+          api_success = random.random() > failure_rate
+
+          if api_success:
+            print("✅ API call succeeded!")
+            success = True
+            api_response = {
+              'status': 200,
+              'data': {'message': 'Success', 'timestamp': time.time()},
+              'attempts': retry_count + 1
+            }
+          else:
+            print(f"❌ API call failed (attempt {retry_count + 1})")
+            success = False
+
+            if retry_count + 1 < max_retries:
+              # Exponential backoff
+              backoff = 2 ** retry_count
+              print(f"   Waiting {backoff}s before retry...")
+              time.sleep(backoff)
+            else:
+              print("   Max retries reached")
+              api_response = {
+                'status': 500,
+                'error': 'Max retries exceeded',
+                'attempts': retry_count + 1
+              }
+
+          print(f"   Success: {success}, Retry count: {retry_count}")
+
+    - id: gateway_check_success
+      type: exclusiveGateway
+      name: API Success?
+      x: 600
+      y: 250
+      poolId: pool1
+      laneId: lane1
+
+    - id: task_process_success
+      type: scriptTask
+      name: Process Response
+      x: 800
+      y: 180
+      poolId: pool1
+      laneId: lane1
+      properties:
+        scriptFormat: python
+        script: |
+          print("\n" + "="*50)
+          print("✅ API RESPONSE PROCESSED")
+          print("="*50)
+          print(f"Status: {api_response['status']}")
+          print(f"Attempts: {api_response['attempts']}")
+          if 'data' in api_response:
+            print(f"Data: {api_response['data']}")
+          print("="*50)
+
+    - id: task_handle_failure
+      type: scriptTask
+      name: Log Failure
+      x: 800
+      y: 320
+      poolId: pool1
+      laneId: lane1
+      properties:
+        scriptFormat: python
+        script: |
+          print("\n" + "="*50)
+          print("❌ API CALL FAILED")
+          print("="*50)
+          print(f"Error: {api_response.get('error', 'Unknown')}")
+          print(f"Total Attempts: {api_response['attempts']}")
+          print("="*50)
+
+    - id: end_success
+      type: endEvent
+      name: Success
+      x: 950
+      y: 200
+      poolId: pool1
+      laneId: lane1
+
+    - id: end_failure
+      type: endEvent
+      name: Failed
+      x: 950
+      y: 340
+      poolId: pool1
+      laneId: lane1
+
+  connections:
+    - id: conn1
+      from: start1
+      to: task_call_api
+
+    - id: conn2
+      from: task_call_api
+      to: gateway_check_success
+
+    - id: conn3
+      from: gateway_check_success
+      to: task_process_success
+      properties:
+        name: Success
+        condition: "success == True"
+
+    - id: conn4
+      from: gateway_check_success
+      to: task_handle_failure
+      properties:
+        name: Failed
+        condition: "success == False or not success"
+
+    - id: conn5
+      from: task_process_success
+      to: end_success
+
+    - id: conn6
+      from: task_handle_failure
+      to: end_failure

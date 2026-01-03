@@ -1,0 +1,233 @@
+process:
+  id: multi_instance_subprocess
+  name: Multi-Instance with Subprocess Pattern
+
+  # Define reusable subprocess for processing a single order
+  subprocess_definitions:
+    - id: process_single_order_subprocess
+      name: Process Single Order
+      elements:
+        - id: sub_start
+          type: startEvent
+          name: Start Order Processing
+
+        - id: sub_validate
+          type: scriptTask
+          name: Validate Order
+          properties:
+            scriptFormat: python
+            script: |
+              print(f"\n{'='*50}")
+              print(f"🔍 VALIDATING ORDER: {order['id']}")
+              print(f"{'='*50}")
+              print(f"   Customer: {order['customer']}")
+              print(f"   Items: {len(order['items'])}")
+
+              # Validate order has items
+              is_valid = len(order['items']) > 0
+              validation_status = "VALID" if is_valid else "INVALID"
+
+              print(f"   Status: {validation_status}")
+
+        - id: sub_calculate
+          type: scriptTask
+          name: Calculate Total
+          properties:
+            scriptFormat: python
+            script: |
+              import time
+
+              print(f"\n💰 Calculating total for {order['id']}...")
+
+              # Calculate order total
+              total = sum(item['price'] * item['quantity'] for item in order['items'])
+
+              # Simulate processing time
+              processing_time = order.get('processing_time', 1)
+              time.sleep(processing_time)
+
+              print(f"   Total: ${total:.2f}")
+
+        - id: sub_process
+          type: scriptTask
+          name: Process Payment
+          properties:
+            scriptFormat: python
+            script: |
+              print(f"\n💳 Processing payment for {order['id']}...")
+              print(f"   Amount: ${total:.2f}")
+
+              # Mark as processed
+              processed_status = "PAID"
+
+              print(f"   Status: {processed_status}")
+
+        - id: sub_notify
+          type: sendTask
+          name: Send Order Confirmation
+          properties:
+            messageType: Email
+            to: "${order['customer']}@example.com"
+            subject: "Order ${order['id']} Confirmed"
+            messageBody: |
+              Dear ${order['customer']},
+
+              Your order ${order['id']} has been confirmed!
+              Total: $${total:.2f}
+
+              Thank you for your business.
+
+        - id: sub_end
+          type: endEvent
+          name: Order Complete
+
+      connections:
+        - id: sub_conn1
+          from: sub_start
+          to: sub_validate
+
+        - id: sub_conn2
+          from: sub_validate
+          to: sub_calculate
+
+        - id: sub_conn3
+          from: sub_calculate
+          to: sub_process
+
+        - id: sub_conn4
+          from: sub_process
+          to: sub_notify
+
+        - id: sub_conn5
+          from: sub_notify
+          to: sub_end
+
+  pools:
+    - id: pool1
+      name: Order Processing Pool
+      x: 50
+      y: 100
+      width: 1400
+      height: 400
+      lanes:
+        - id: lane1
+          name: Processing Lane
+          height: 400
+
+  elements:
+    - id: start1
+      type: startEvent
+      name: Start Batch
+      x: 150
+      y: 300
+      poolId: pool1
+      laneId: lane1
+
+    # Multi-Instance Call Activity - processes each order through the subprocess
+    - id: call_process_order
+      type: callActivity
+      name: Process Each Order
+      x: 350
+      y: 270
+      poolId: pool1
+      laneId: lane1
+      properties:
+        calledElement: process_single_order_subprocess
+
+        # Multi-Instance Configuration
+        isMultiInstance: true
+        isSequential: false  # Parallel execution
+        inputCollection: orders
+        inputElement: order
+        outputCollection: processedOrders
+        outputElement: result
+
+        # Variable mapping
+        inheritVariables: true
+        inputMappings:
+          - source: order
+            target: order
+        outputMappings:
+          - source: total
+            target: result
+
+    - id: task_aggregate_results
+      type: scriptTask
+      name: Aggregate All Results
+      x: 650
+      y: 270
+      poolId: pool1
+      laneId: lane1
+      properties:
+        scriptFormat: python
+        script: |
+          import time
+
+          print("\n" + "="*60)
+          print("📊 FINAL BATCH SUMMARY")
+          print("="*60)
+
+          # Aggregate results from all subprocess executions
+          total_orders = len(orders)
+
+          # Calculate totals (processedOrders contains the 'result' from each subprocess)
+          total_revenue = sum(processedOrders) if processedOrders else 0
+          average_order = total_revenue / total_orders if total_orders > 0 else 0
+
+          print(f"Total Orders: {total_orders}")
+          print(f"Total Revenue: ${total_revenue:.2f}")
+          print(f"Average Order: ${average_order:.2f}")
+          print("="*60)
+
+          # Store for next task
+          batch_summary = {
+            'totalOrders': total_orders,
+            'totalRevenue': total_revenue,
+            'averageOrder': average_order,
+            'timestamp': time.strftime('%Y-%m-%d %H:%M:%S')
+          }
+
+    - id: task_send_batch_summary
+      type: sendTask
+      name: Send Batch Summary
+      x: 950
+      y: 270
+      poolId: pool1
+      laneId: lane1
+      properties:
+        messageType: Email
+        to: manager@example.com
+        subject: "Batch Processing Complete - ${batch_summary['totalOrders']} Orders"
+        messageBody: |
+          Batch processing completed successfully!
+
+          Summary:
+          - Total Orders: ${batch_summary['totalOrders']}
+          - Total Revenue: $${batch_summary['totalRevenue']:.2f}
+          - Average Order: $${batch_summary['averageOrder']:.2f}
+          - Completed: ${batch_summary['timestamp']}
+
+    - id: end1
+      type: endEvent
+      name: Batch Complete
+      x: 1200
+      y: 300
+      poolId: pool1
+      laneId: lane1
+
+  connections:
+    - id: conn1
+      from: start1
+      to: call_process_order
+
+    - id: conn2
+      from: call_process_order
+      to: task_aggregate_results
+
+    - id: conn3
+      from: task_aggregate_results
+      to: task_send_batch_summary
+
+    - id: conn4
+      from: task_send_batch_summary
+      to: end1

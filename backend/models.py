@@ -13,12 +13,21 @@ class ElementType(str, Enum):
     END_EVENT = "endEvent"
     INTERMEDIATE_EVENT = "intermediateEvent"
     TIMER_INTERMEDIATE_CATCH_EVENT = "timerIntermediateCatchEvent"
+    # Event Sub-Process Start Events
+    ERROR_START_EVENT = "errorStartEvent"
+    TIMER_START_EVENT = "timerStartEvent"
+    MESSAGE_START_EVENT = "messageStartEvent"
+    SIGNAL_START_EVENT = "signalStartEvent"
+    ESCALATION_START_EVENT = "escalationStartEvent"
+    COMPENSATION_START_EVENT = "compensationStartEvent"
+    # Boundary Events
     ERROR_BOUNDARY_EVENT = "errorBoundaryEvent"
     TIMER_BOUNDARY_EVENT = "timerBoundaryEvent"
     ESCALATION_BOUNDARY_EVENT = "escalationBoundaryEvent"
     SIGNAL_BOUNDARY_EVENT = "signalBoundaryEvent"
     COMPENSATION_BOUNDARY_EVENT = "compensationBoundaryEvent"
     COMPENSATION_INTERMEDIATE_THROW_EVENT = "compensationIntermediateThrowEvent"
+    # Tasks
     TASK = "task"
     USER_TASK = "userTask"
     SERVICE_TASK = "serviceTask"
@@ -29,7 +38,9 @@ class ElementType(str, Enum):
     BUSINESS_RULE_TASK = "businessRuleTask"
     AGENTIC_TASK = "agenticTask"
     SUB_PROCESS = "subProcess"
+    EVENT_SUB_PROCESS = "eventSubProcess"
     CALL_ACTIVITY = "callActivity"
+    # Gateways
     EXCLUSIVE_GATEWAY = "exclusiveGateway"
     PARALLEL_GATEWAY = "parallelGateway"
     INCLUSIVE_GATEWAY = "inclusiveGateway"
@@ -70,6 +81,8 @@ class Pool(BaseModel):
 
 class Element(BaseModel):
     """BPMN element definition"""
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     id: str
     type: ElementType
     name: str
@@ -82,8 +95,8 @@ class Element(BaseModel):
     expanded: Optional[bool] = None
     width: Optional[int] = None
     height: Optional[int] = None
-    childElements: Optional[List['Element']] = None
-    childConnections: Optional[List['Connection']] = None
+    childElements: Optional[List['Element']] = Field(default=None)
+    childConnections: Optional[List['Connection']] = Field(default=None)
 
     def is_task(self) -> bool:
         """Check if element is a task type"""
@@ -98,6 +111,7 @@ class Element(BaseModel):
             ElementType.BUSINESS_RULE_TASK,
             ElementType.AGENTIC_TASK,
             ElementType.SUB_PROCESS,
+            ElementType.EVENT_SUB_PROCESS,
             ElementType.CALL_ACTIVITY
         ]
 
@@ -239,3 +253,8 @@ class UserTaskInstance(BaseModel):
     data: Dict[str, Any] = Field(default_factory=dict)
     status: ExecutionStatus = ExecutionStatus.WAITING
     completion_data: Optional[Dict[str, Any]] = None
+
+
+# Enable forward references for recursive models
+Element.model_rebuild()
+Connection.model_rebuild()

@@ -1,0 +1,357 @@
+process:
+  id: parallel_events_sync
+  name: Parallel Event Streams with Synchronization
+
+  pools:
+    - id: pool1
+      name: Order Processing Pool
+      x: 50
+      y: 100
+      width: 1400
+      height: 500
+      lanes:
+        - id: lane_payment
+          name: Payment Processing
+          height: 150
+        - id: lane_inventory
+          name: Inventory Management
+          height: 150
+        - id: lane_shipping
+          name: Shipping
+          height: 200
+
+  elements:
+    # Main flow
+    - id: start1
+      type: startEvent
+      name: Order Received
+      x: 150
+      y: 350
+      poolId: pool1
+      laneId: lane_shipping
+
+    # Fork: Start parallel processes
+    - id: gateway_fork
+      type: parallelGateway
+      name: Start Parallel Processing
+      x: 300
+      y: 350
+      poolId: pool1
+      laneId: lane_shipping
+
+    # ===== PAYMENT PATH =====
+    - id: task_authorize_payment
+      type: scriptTask
+      name: Authorize Payment
+      x: 450
+      y: 140
+      poolId: pool1
+      laneId: lane_payment
+      properties:
+        scriptFormat: python
+        script: |
+          import time
+          print("💳 Payment Path: Authorizing payment...")
+
+          # Check if payment should fail (for testing)
+          payment_should_fail = context.get('payment_should_fail', False)
+
+          if payment_should_fail:
+            print("   ⚠️ Simulating payment failure")
+            time.sleep(20)  # Exceed 15s timeout to trigger boundary event
+          else:
+            time.sleep(2)  # Normal processing time
+
+          # Check payment status from context
+          payment_method = context.get('payment_method', 'credit_card')
+          amount = context.get('order_total', 0)
+
+          print(f"   Method: {payment_method}")
+          print(f"   Amount: ${amount:.2f}")
+
+          payment_authorized = True
+          payment_auth_code = f"AUTH-{workflowInstanceId[:8]}"
+
+          print(f"✅ Payment authorized: {payment_auth_code}")
+
+    # Timer boundary on payment task
+    - id: timer_payment_timeout
+      type: timerBoundaryEvent
+      name: Payment Timeout
+      x: 520
+      y: 170
+      poolId: pool1
+      laneId: lane_payment
+      attachedToRef: task_authorize_payment
+      properties:
+        timerDuration: PT15S  # 15 seconds timeout
+        cancelActivity: true
+
+    - id: task_payment_timeout_handler
+      type: scriptTask
+      name: Handle Payment Timeout
+      x: 650
+      y: 70
+      poolId: pool1
+      laneId: lane_payment
+      properties:
+        scriptFormat: python
+        script: |
+          print("⏰ Payment timeout occurred!")
+          payment_authorized = False
+          payment_error = "Payment authorization timed out"
+
+    # ===== INVENTORY PATH =====
+    - id: task_reserve_inventory
+      type: scriptTask
+      name: Reserve Inventory
+      x: 450
+      y: 240
+      poolId: pool1
+      laneId: lane_inventory
+      properties:
+        scriptFormat: python
+        script: |
+          import time
+          print("📦 Inventory Path: Reserving inventory...")
+
+          # Check if inventory should fail (for testing)
+          inventory_should_fail = context.get('inventory_should_fail', False)
+
+          if inventory_should_fail:
+            print("   ⚠️ Simulating inventory failure")
+            time.sleep(25)  # Exceed 20s timeout to trigger boundary event
+          else:
+            time.sleep(3)  # Normal processing time
+
+          items = context.get('order_items', [])
+          print(f"   Items to reserve: {len(items)}")
+
+          for item in items:
+            print(f"   - {item['name']}: {item['quantity']} units")
+
+          inventory_reserved = True
+          reservation_id = f"RES-{workflowInstanceId[:8]}"
+
+          print(f"✅ Inventory reserved: {reservation_id}")
+
+    # Timer boundary on inventory task
+    - id: timer_inventory_timeout
+      type: timerBoundaryEvent
+      name: Inventory Timeout
+      x: 520
+      y: 270
+      poolId: pool1
+      laneId: lane_inventory
+      attachedToRef: task_reserve_inventory
+      properties:
+        timerDuration: PT20S  # 20 seconds timeout
+        cancelActivity: true
+
+    - id: task_inventory_timeout_handler
+      type: scriptTask
+      name: Handle Inventory Timeout
+      x: 650
+      y: 310
+      poolId: pool1
+      laneId: lane_inventory
+      properties:
+        scriptFormat: python
+        script: |
+          print("⏰ Inventory reservation timed out!")
+          inventory_reserved = False
+          inventory_error = "Inventory reservation timed out"
+
+    # ===== SHIPPING PATH =====
+    - id: task_calculate_shipping
+      type: scriptTask
+      name: Calculate Shipping
+      x: 450
+      y: 340
+      poolId: pool1
+      laneId: lane_shipping
+      properties:
+        scriptFormat: python
+        script: |
+          import time
+          print("🚚 Shipping Path: Calculating shipping...")
+          time.sleep(1)
+
+          shipping_address = context.get('shipping_address', {})
+          order_weight = context.get('order_weight', 5)
+
+          print(f"   Destination: {shipping_address.get('city', 'Unknown')}")
+          print(f"   Weight: {order_weight} kg")
+
+          shipping_cost = 15.00 + (order_weight * 2.5)
+          shipping_method = "Standard Ground"
+
+          print(f"✅ Shipping calculated: ${shipping_cost:.2f} ({shipping_method})")
+
+    # ===== JOIN: Wait for all parallel paths =====
+    - id: gateway_join
+      type: parallelGateway
+      name: Join All Processes
+      x: 800
+      y: 350
+      poolId: pool1
+      laneId: lane_shipping
+
+    # Check if all processes succeeded
+    - id: gateway_check_status
+      type: exclusiveGateway
+      name: All Successful?
+      x: 950
+      y: 350
+      poolId: pool1
+      laneId: lane_shipping
+
+    # Success path
+    - id: task_complete_order
+      type: scriptTask
+      name: Complete Order
+      x: 1100
+      y: 300
+      poolId: pool1
+      laneId: lane_shipping
+      properties:
+        scriptFormat: python
+        script: |
+          print("\n" + "="*60)
+          print("✅ ORDER COMPLETED SUCCESSFULLY")
+          print("="*60)
+          print(f"Payment: {payment_auth_code}")
+          print(f"Inventory: {reservation_id}")
+          print(f"Shipping: ${shipping_cost:.2f}")
+          print("="*60)
+
+          order_status = "completed"
+          completion_time = time.strftime('%Y-%m-%d %H:%M:%S')
+
+    # Failure path
+    - id: task_handle_failure
+      type: scriptTask
+      name: Cancel Order
+      x: 1100
+      y: 400
+      poolId: pool1
+      laneId: lane_shipping
+      properties:
+        scriptFormat: python
+        script: |
+          print("\n" + "="*60)
+          print("❌ ORDER PROCESSING FAILED")
+          print("="*60)
+
+          # Check what failed (variables are in context/globals)
+          try:
+            if not payment_authorized:
+              print(f"Payment Failed: {globals().get('payment_error', 'Payment not completed')}")
+          except NameError:
+            print("Payment Failed: Variable not set")
+
+          try:
+            if not inventory_reserved:
+              print(f"Inventory Failed: {globals().get('inventory_error', 'Inventory not reserved')}")
+          except NameError:
+            print("Inventory Failed: Variable not set")
+
+          print("="*60)
+
+          order_status = "cancelled"
+
+    - id: end_success
+      type: endEvent
+      name: Order Complete
+      x: 1280
+      y: 320
+      poolId: pool1
+      laneId: lane_shipping
+
+    - id: end_failure
+      type: endEvent
+      name: Order Cancelled
+      x: 1280
+      y: 420
+      poolId: pool1
+      laneId: lane_shipping
+
+  connections:
+    # Main flow
+    - id: conn1
+      from: start1
+      to: gateway_fork
+
+    # Fork to three parallel paths
+    - id: conn2
+      from: gateway_fork
+      to: task_authorize_payment
+
+    - id: conn3
+      from: gateway_fork
+      to: task_reserve_inventory
+
+    - id: conn4
+      from: gateway_fork
+      to: task_calculate_shipping
+
+    # Timeout paths
+    - id: conn5
+      from: timer_payment_timeout
+      to: task_payment_timeout_handler
+
+    - id: conn6
+      from: timer_inventory_timeout
+      to: task_inventory_timeout_handler
+
+    # All paths join (including timeout handlers)
+    # Either the task OR its timeout handler will arrive at join, not both
+    - id: conn7
+      from: task_authorize_payment
+      to: gateway_join
+
+    - id: conn8
+      from: task_payment_timeout_handler
+      to: gateway_join
+
+    - id: conn9
+      from: task_reserve_inventory
+      to: gateway_join
+
+    - id: conn10
+      from: task_inventory_timeout_handler
+      to: gateway_join
+
+    - id: conn11
+      from: task_calculate_shipping
+      to: gateway_join
+
+    # After join, check status
+    - id: conn12
+      from: gateway_join
+      to: gateway_check_status
+
+    # Success or failure
+    - id: conn13
+      from: gateway_check_status
+      to: task_complete_order
+      properties:
+        name: All OK
+        condition: "payment_authorized == True and inventory_reserved == True"
+
+    - id: conn14
+      from: gateway_check_status
+      to: task_handle_failure
+      properties:
+        name: Failed
+        condition: ""
+
+    - id: conn15
+      from: task_complete_order
+      to: end_success
+      properties: {}
+
+    - id: conn16
+      from: task_handle_failure
+      to: end_failure
+      properties: {}
