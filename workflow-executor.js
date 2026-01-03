@@ -161,7 +161,8 @@ class WorkflowExecutor {
                         exported.attachedToRef = element.attachedToRef;
                     }
 
-                    if (element.type === 'subProcess') {
+                    // Include subprocess-specific fields for BOTH subProcess and eventSubProcess
+                    if (element.type === 'subProcess' || element.type === 'eventSubProcess') {
                         exported.expanded = element.expanded;
                         exported.width = element.width;
                         exported.height = element.height;

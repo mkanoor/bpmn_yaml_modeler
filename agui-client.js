@@ -417,6 +417,10 @@ class AGUIClient {
             return null;
         }
 
+        // DEBUG: Log element classes
+        console.log(`    🔍 Element classes: "${element.getAttribute('class')}"`);
+        console.log(`    🔍 Has subprocess-child-element class: ${element.classList.contains('subprocess-child-element')}`);
+
         // Get element position from its transform attribute
         const transform = element.getAttribute('transform');
         let x = 0, y = 0;
@@ -428,9 +432,66 @@ class AGUIClient {
             }
         }
 
+        console.log(`    🔍 Initial position from transform: (${x}, ${y})`);
+
+        // Check if this is a subprocess child element (has relative coordinates)
+        // If so, add the parent subprocess position to get absolute coordinates
+        if (element.classList.contains('subprocess-child-element')) {
+            console.log(`    🔍 IS a subprocess child element - looking for parent...`);
+
+            // Find the parent subprocess element
+            // DOM structure: <g class="bpmn-element" transform="..."> <g> <g class="subprocess-children"> <g class="subprocess-child-element">
+            // We need to go from subprocess-children -> parent <g> -> parent <g class="bpmn-element">
+            const subprocessChildrenGroup = element.closest('.subprocess-children');
+            console.log(`    🔍 subprocessChildrenGroup found: ${subprocessChildrenGroup !== null}`);
+
+            if (subprocessChildrenGroup) {
+                const shapeGroup = subprocessChildrenGroup.parentElement;  // The <g> from createShape()
+                console.log(`    🔍 shapeGroup (first parent) found: ${shapeGroup !== null}`);
+                console.log(`    🔍 shapeGroup id: ${shapeGroup?.getAttribute('data-id')}`);
+
+                if (shapeGroup) {
+                    // Go up one more level to get the bpmn-element group with the transform
+                    const subprocessGroup = shapeGroup.parentElement;
+                    console.log(`    🔍 subprocessGroup (second parent - bpmn-element) found: ${subprocessGroup !== null}`);
+                    console.log(`    🔍 subprocessGroup class: "${subprocessGroup?.getAttribute('class')}"`);
+                    console.log(`    🔍 subprocessGroup id: ${subprocessGroup?.getAttribute('data-id')}`);
+
+                    const parentTransform = subprocessGroup?.getAttribute('transform');
+                    console.log(`    🔍 Parent transform: "${parentTransform}"`);
+
+                    if (parentTransform) {
+                        const parentMatch = parentTransform.match(/translate\(([^,]+),\s*([^)]+)\)/);
+                        if (parentMatch) {
+                            const parentX = parseFloat(parentMatch[1]);
+                            const parentY = parseFloat(parentMatch[2]);
+                            console.log(`    📍 Child element detected - parent subprocess at (${parentX}, ${parentY})`);
+                            console.log(`    📍 Adding parent position: (${x}, ${y}) + (${parentX}, ${parentY})`);
+                            x += parentX;
+                            y += parentY;
+                            console.log(`    📍 New absolute position: (${x}, ${y})`);
+                        } else {
+                            console.warn(`    ❌ Parent transform doesn't match expected pattern`);
+                        }
+                    } else {
+                        console.warn(`    ❌ Parent has no transform attribute`);
+                    }
+                } else {
+                    console.warn(`    ❌ subprocessChildrenGroup has no parent element`);
+                }
+            } else {
+                console.warn(`    ❌ Could not find .subprocess-children parent group`);
+            }
+        } else {
+            console.log(`    🔍 NOT a subprocess child element - using position as-is`);
+        }
+
         // Apply offset for multiple tokens (spread them out)
         const offset = offsetIndex * 12; // 12px spacing between tokens
         x += offset;
+
+        console.log(`    🔍 Final token position (with offset): (${x}, ${y})`);
+        console.log(`    🔍 Creating token at this position...`);
 
         // Get color for this token
         const color = this.tokenColors[colorIndex % this.tokenColors.length];
@@ -533,24 +594,31 @@ class AGUIClient {
         const fromPos = this.getElementPosition(fromElement);
         const toPos = this.getElementPosition(toElement);
 
+        console.log(`🔵 moveToken: from ${fromElementId} at (${fromPos.x}, ${fromPos.y}) to ${toElementId} at (${toPos.x}, ${toPos.y})`);
+
         // Get token to move
         let token = specificToken;
         if (!token) {
             const tokensAtElement = this.tokens.get(fromElementId);
             if (!tokensAtElement || tokensAtElement.length === 0) {
+                console.log(`    ⚠️ No token found at ${fromElementId}, creating new token`);
                 token = this.createToken(fromElementId);
             } else {
+                console.log(`    ✅ Found existing token at ${fromElementId} (${tokensAtElement.length} total)`);
                 // Take the first token from the array
                 token = tokensAtElement[0];
             }
+        } else {
+            console.log(`    ✅ Using specific token provided`);
         }
 
         if (!token) {
+            console.warn(`    ❌ Failed to get or create token for ${fromElementId}`);
             if (onComplete) onComplete();
             return;
         }
 
-        console.log(`🔵 Moving token from ${fromElementId} to ${toElementId}`);
+        console.log(`🔵 Animating token movement from ${fromElementId} to ${toElementId}`);
 
         // Animate token movement
         const duration = 800; // ms
@@ -665,6 +733,31 @@ class AGUIClient {
                 y = parseFloat(match[2]);
             }
         }
+
+        // Check if this is a subprocess child element (has relative coordinates)
+        if (element.classList.contains('subprocess-child-element')) {
+            // DOM structure: <g class="bpmn-element" transform="..."> <g> <g class="subprocess-children"> <g class="subprocess-child-element">
+            // We need to go from subprocess-children -> parent <g> -> parent <g class="bpmn-element">
+            const subprocessChildrenGroup = element.closest('.subprocess-children');
+            if (subprocessChildrenGroup) {
+                const shapeGroup = subprocessChildrenGroup.parentElement;  // The <g> from createShape()
+                if (shapeGroup) {
+                    // Go up one more level to get the bpmn-element group with the transform
+                    const subprocessGroup = shapeGroup.parentElement;
+                    if (subprocessGroup) {
+                        const parentTransform = subprocessGroup.getAttribute('transform');
+                        if (parentTransform) {
+                            const parentMatch = parentTransform.match(/translate\(([^,]+),\s*([^)]+)\)/);
+                            if (parentMatch) {
+                                x += parseFloat(parentMatch[1]);
+                                y += parseFloat(parentMatch[2]);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         return { x, y };
     }
 
@@ -692,15 +785,25 @@ class AGUIClient {
             return; // Don't try to create token for elements that aren't rendered
         }
 
-        // Create token at this element if it doesn't exist
+        // Only create token at START events - other elements receive tokens via moveToken()
+        // Check if this element's type indicates it's a start event
+        const isStartEvent = element.querySelector('circle[stroke-width="2"]') !== null &&
+                            !element.querySelector('circle[stroke-width="4"]'); // Not an end event
+
         const tokensAtElement = this.tokens.get(elementId);
         if (!tokensAtElement || tokensAtElement.length === 0) {
-            console.log(`  🎯 Creating token for ${elementId} (no existing tokens)`);
-            const token = this.createToken(elementId);
-            if (token) {
-                console.log(`  ✅ Token created successfully`);
+            // Only create tokens for start events (workflow entry points)
+            // Other elements will receive tokens via moveToken() from previous elements
+            if (isStartEvent) {
+                console.log(`  🎯 Creating token for START event ${elementId} (no existing tokens)`);
+                const token = this.createToken(elementId);
+                if (token) {
+                    console.log(`  ✅ Token created successfully`);
+                } else {
+                    console.warn(`  ❌ Token creation FAILED`);
+                }
             } else {
-                console.warn(`  ❌ Token creation FAILED`);
+                console.log(`  ℹ️ No tokens yet at ${elementId}, but not a start event - will receive token from previous element`);
             }
         } else {
             console.log(`  ℹ️ Element already has ${tokensAtElement.length} token(s), not creating new one`);
@@ -777,7 +880,31 @@ class AGUIClient {
     moveTokenToNextElements(elementId) {
         // Find outgoing connections from this element
         if (typeof modeler !== 'undefined' && modeler.connections) {
-            const outgoingConnections = modeler.connections.filter(c => c.from === elementId);
+            let outgoingConnections = modeler.connections.filter(c => c.from === elementId);
+
+            // If no connections found, check Event Sub-Process child connections
+            if (outgoingConnections.length === 0) {
+                console.log(`🔍 No main connections found for ${elementId}, checking Event Sub-Processes`);
+                // Search all Event Sub-Processes for this element
+                const eventSubProcesses = modeler.elements.filter(e =>
+                    e.type === 'eventSubProcess' && e.childConnections
+                );
+                console.log(`🔍 Found ${eventSubProcesses.length} Event Sub-Process(es) with childConnections`);
+                for (const subprocess of eventSubProcesses) {
+                    console.log(`  📋 ESP "${subprocess.name}" has ${subprocess.childConnections.length} child connections`);
+                    console.log(`  📋 Child connections:`, subprocess.childConnections.map(c => `${c.from} -> ${c.to}`));
+                    const childConnections = subprocess.childConnections.filter(c => c.from === elementId);
+                    console.log(`  📋 Filtered childConnections for ${elementId}:`, childConnections);
+                    if (childConnections.length > 0) {
+                        outgoingConnections = childConnections;
+                        console.log(`🔵 Found ${childConnections.length} child connections in Event Sub-Process for ${elementId}`);
+                        break;
+                    }
+                }
+                if (outgoingConnections.length === 0) {
+                    console.log(`❌ No childConnections found for ${elementId} in any Event Sub-Process`);
+                }
+            }
 
             if (outgoingConnections.length === 0) {
                 // No outgoing connections

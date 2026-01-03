@@ -359,11 +359,11 @@ class BPMNModeler {
             laneId,
             attachedToRef,  // For boundary events - references parent task
             properties: {},
-            expanded: type === 'subProcess' ? false : undefined, // Track collapse state
-            childElements: type === 'subProcess' ? [] : undefined, // Nested elements
-            childConnections: type === 'subProcess' ? [] : undefined, // Nested connections
-            width: type === 'subProcess' ? 300 : undefined, // Expanded width
-            height: type === 'subProcess' ? 200 : undefined // Expanded height
+            expanded: (type === 'subProcess' || type === 'eventSubProcess') ? false : undefined, // Track collapse state
+            childElements: (type === 'subProcess' || type === 'eventSubProcess') ? [] : undefined, // Nested elements
+            childConnections: (type === 'subProcess' || type === 'eventSubProcess') ? [] : undefined, // Nested connections
+            width: (type === 'subProcess' || type === 'eventSubProcess') ? 300 : undefined, // Expanded width
+            height: (type === 'subProcess' || type === 'eventSubProcess') ? 200 : undefined // Expanded height
         };
 
         // Add boundary event specific properties
@@ -713,9 +713,10 @@ class BPMNModeler {
             case 'businessRuleTask':
             case 'agenticTask':
             case 'subProcess':
+            case 'eventSubProcess':
             case 'callActivity':
                 // Determine size based on expansion state
-                const isExpanded = element.type === 'subProcess' && element.expanded;
+                const isExpanded = (element.type === 'subProcess' || element.type === 'eventSubProcess') && element.expanded;
                 const width = isExpanded ? element.width : 120;  // Increased from 100 to 120
                 const height = isExpanded ? element.height : 80; // Increased from 60 to 80
                 const halfWidth = width / 2;
@@ -738,6 +739,13 @@ class BPMNModeler {
                     taskRect.setAttribute('stroke', '#495057');
                 }
 
+                // Event Sub-Process gets dashed border
+                if (element.type === 'eventSubProcess') {
+                    taskRect.setAttribute('stroke-dasharray', '5,5');
+                    taskRect.setAttribute('stroke', '#666');
+                    taskRect.setAttribute('fill', '#fff9e6');  // Light yellow background
+                }
+
                 g.appendChild(taskRect);
 
                 // Use multiline text for tasks
@@ -753,7 +761,7 @@ class BPMNModeler {
                     });
 
                 // Add task type markers
-                if (element.type === 'subProcess') {
+                if (element.type === 'subProcess' || element.type === 'eventSubProcess') {
                     // Expand/Collapse button
                     const toggleBtn = document.createElementNS('http://www.w3.org/2000/svg', 'text');
                     toggleBtn.setAttribute('x', isExpanded ? -halfWidth + 10 : 0);
@@ -773,6 +781,16 @@ class BPMNModeler {
                     // If expanded, render child elements
                     if (isExpanded) {
                         this.renderSubProcessChildren(g, element);
+                    }
+
+                    // For event subprocess, add event indicator
+                    if (element.type === 'eventSubProcess') {
+                        const eventMarker = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                        eventMarker.setAttribute('x', halfWidth - 15);
+                        eventMarker.setAttribute('y', -halfHeight + 15);
+                        eventMarker.setAttribute('font-size', 12);
+                        eventMarker.textContent = '⚡';
+                        g.appendChild(eventMarker);
                     }
                 } else if (element.type === 'userTask') {
                     // User icon (person) - positioned in top-left corner
@@ -937,57 +955,62 @@ class BPMNModeler {
                     vLine.setAttribute('stroke-width', 1);
                     g.appendChild(vLine);
                 } else if (element.type === 'agenticTask') {
-                    // Brain icon (AI/LLM indicator) - positioned in top-left corner
+                    // Robot icon (AI/LLM indicator) - positioned in top-left corner
                     const aiColor = '#ec4899'; // Pink color for AI
 
-                    // Brain outline (simplified brain shape) - compact version
-                    const brainPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                    brainPath.setAttribute('d', 'M -56 -28 C -57 -29 -57 -30 -56 -31 C -55 -32 -53 -32 -52 -31 C -51.5 -32 -50.5 -32 -50 -31 C -49 -32 -47 -32 -46 -31 C -45 -30 -45 -29 -46 -28 C -46 -27 -46 -26 -47 -25 C -48 -24 -49 -24 -50 -25 C -50.5 -24 -51.5 -24 -52 -25 C -53 -24 -54 -24 -55 -25 C -56 -26 -56 -27 -56 -28 Z');
-                    brainPath.setAttribute('fill', 'none');
-                    brainPath.setAttribute('stroke', aiColor);
-                    brainPath.setAttribute('stroke-width', 1.2);
-                    g.appendChild(brainPath);
+                    // Robot head (rectangle with rounded corners)
+                    const head = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                    head.setAttribute('x', -54);
+                    head.setAttribute('y', -30);
+                    head.setAttribute('width', 12);
+                    head.setAttribute('height', 10);
+                    head.setAttribute('rx', 2);
+                    head.setAttribute('fill', 'none');
+                    head.setAttribute('stroke', aiColor);
+                    head.setAttribute('stroke-width', 1);
+                    g.appendChild(head);
 
-                    // Brain folds/wrinkles (left hemisphere)
-                    const fold1 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                    fold1.setAttribute('d', 'M -55 -29 Q -54 -28 -54 -27');
-                    fold1.setAttribute('fill', 'none');
-                    fold1.setAttribute('stroke', aiColor);
-                    fold1.setAttribute('stroke-width', 0.8);
-                    g.appendChild(fold1);
+                    // Robot antenna
+                    const antenna = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                    antenna.setAttribute('x1', -48);
+                    antenna.setAttribute('y1', -30);
+                    antenna.setAttribute('x2', -48);
+                    antenna.setAttribute('y2', -33);
+                    antenna.setAttribute('stroke', aiColor);
+                    antenna.setAttribute('stroke-width', 1);
+                    g.appendChild(antenna);
 
-                    const fold2 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                    fold2.setAttribute('d', 'M -53 -30 Q -52 -29 -52 -28');
-                    fold2.setAttribute('fill', 'none');
-                    fold2.setAttribute('stroke', aiColor);
-                    fold2.setAttribute('stroke-width', 0.8);
-                    g.appendChild(fold2);
+                    const antennaDot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                    antennaDot.setAttribute('cx', -48);
+                    antennaDot.setAttribute('cy', -33);
+                    antennaDot.setAttribute('r', 1);
+                    antennaDot.setAttribute('fill', aiColor);
+                    g.appendChild(antennaDot);
 
-                    // Brain folds/wrinkles (right hemisphere)
-                    const fold3 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                    fold3.setAttribute('d', 'M -50 -30 Q -49 -29 -49 -28');
-                    fold3.setAttribute('fill', 'none');
-                    fold3.setAttribute('stroke', aiColor);
-                    fold3.setAttribute('stroke-width', 0.8);
-                    g.appendChild(fold3);
+                    // Robot eyes (two dots)
+                    const leftEye = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                    leftEye.setAttribute('cx', -51);
+                    leftEye.setAttribute('cy', -27);
+                    leftEye.setAttribute('r', 1);
+                    leftEye.setAttribute('fill', aiColor);
+                    g.appendChild(leftEye);
 
-                    const fold4 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                    fold4.setAttribute('d', 'M -48 -29 Q -47 -28 -47 -27');
-                    fold4.setAttribute('fill', 'none');
-                    fold4.setAttribute('stroke', aiColor);
-                    fold4.setAttribute('stroke-width', 0.8);
-                    g.appendChild(fold4);
+                    const rightEye = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                    rightEye.setAttribute('cx', -45);
+                    rightEye.setAttribute('cy', -27);
+                    rightEye.setAttribute('r', 1);
+                    rightEye.setAttribute('fill', aiColor);
+                    g.appendChild(rightEye);
 
-                    // Center line (corpus callosum)
-                    const centerLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-                    centerLine.setAttribute('x1', -51);
-                    centerLine.setAttribute('y1', -31);
-                    centerLine.setAttribute('x2', -51);
-                    centerLine.setAttribute('y2', -25);
-                    centerLine.setAttribute('stroke', aiColor);
-                    centerLine.setAttribute('stroke-width', 0.6);
-                    centerLine.setAttribute('stroke-dasharray', '1.5,0.8');
-                    g.appendChild(centerLine);
+                    // Robot mouth (small line)
+                    const mouth = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                    mouth.setAttribute('x1', -51);
+                    mouth.setAttribute('y1', -22);
+                    mouth.setAttribute('x2', -45);
+                    mouth.setAttribute('y2', -22);
+                    mouth.setAttribute('stroke', aiColor);
+                    mouth.setAttribute('stroke-width', 1);
+                    g.appendChild(mouth);
                 }
                 break;
 
@@ -1576,14 +1599,65 @@ class BPMNModeler {
                 gear.setAttribute('stroke-width', '2');
                 svg.appendChild(gear);
             } else if (type === 'agenticTask') {
-                const brain = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-                brain.setAttribute('x', '23');
-                brain.setAttribute('y', '45');
-                brain.setAttribute('font-size', '16');
-                brain.setAttribute('fill', '#ec4899');
-                brain.setAttribute('font-weight', 'bold');
-                brain.textContent = '🧠';
-                svg.appendChild(brain);
+                // Robot icon
+                const robotGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                robotGroup.setAttribute('transform', 'translate(28, 30)');
+
+                // Robot head (rectangle with rounded corners)
+                const head = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                head.setAttribute('x', -10);
+                head.setAttribute('y', -10);
+                head.setAttribute('width', 20);
+                head.setAttribute('height', 16);
+                head.setAttribute('rx', 3);
+                head.setAttribute('fill', 'none');
+                head.setAttribute('stroke', 'white');
+                head.setAttribute('stroke-width', '2');
+                robotGroup.appendChild(head);
+
+                // Antenna
+                const antenna = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                antenna.setAttribute('x1', 0);
+                antenna.setAttribute('y1', -10);
+                antenna.setAttribute('x2', 0);
+                antenna.setAttribute('y2', -15);
+                antenna.setAttribute('stroke', 'white');
+                antenna.setAttribute('stroke-width', '2');
+                robotGroup.appendChild(antenna);
+
+                const antennaDot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                antennaDot.setAttribute('cx', 0);
+                antennaDot.setAttribute('cy', -15);
+                antennaDot.setAttribute('r', 2);
+                antennaDot.setAttribute('fill', 'white');
+                robotGroup.appendChild(antennaDot);
+
+                // Eyes
+                const leftEye = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                leftEye.setAttribute('cx', -5);
+                leftEye.setAttribute('cy', -4);
+                leftEye.setAttribute('r', 2);
+                leftEye.setAttribute('fill', 'white');
+                robotGroup.appendChild(leftEye);
+
+                const rightEye = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                rightEye.setAttribute('cx', 5);
+                rightEye.setAttribute('cy', -4);
+                rightEye.setAttribute('r', 2);
+                rightEye.setAttribute('fill', 'white');
+                robotGroup.appendChild(rightEye);
+
+                // Mouth
+                const mouth = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                mouth.setAttribute('x1', -5);
+                mouth.setAttribute('y1', 3);
+                mouth.setAttribute('x2', 5);
+                mouth.setAttribute('y2', 3);
+                mouth.setAttribute('stroke', 'white');
+                mouth.setAttribute('stroke-width', '2');
+                robotGroup.appendChild(mouth);
+
+                svg.appendChild(robotGroup);
             }
         }
         // Gateways
@@ -2648,6 +2722,9 @@ Your tasks:
         subprocess.childElements.forEach(child => {
             const childElement = this.createSubProcessChildShape(child);
             childGroup.appendChild(childElement);
+
+            // Make child elements selectable (so they can be clicked to show properties)
+            this.makeElementSelectable(childElement, child);
         });
 
         // Render child connections
@@ -2663,6 +2740,7 @@ Your tasks:
         const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
         g.setAttribute('class', 'subprocess-child-element');
         g.setAttribute('data-child-id', element.id);
+        g.setAttribute('data-id', element.id);  // Also set data-id for token system
         g.setAttribute('transform', `translate(${element.x}, ${element.y})`);
 
         // Simplified rendering for child elements
@@ -2770,11 +2848,39 @@ Your tasks:
 
         if (!fromEl || !toEl) return null;
 
+        // Calculate connection points at the edges of shapes
+        const from = { x: fromEl.x, y: fromEl.y };
+        const to = { x: toEl.x, y: toEl.y };
+
+        // Get element dimensions based on type
+        const getRadius = (el) => {
+            if (el.type && el.type.toLowerCase().includes('event')) {
+                return 15; // Event radius (circular)
+            }
+            // Tasks in subprocess children are rendered as 70x40 (see lines 2797-2800)
+            // So half-width is exactly 35 pixels
+            return 35; // Task half-width
+        };
+
+        const fromRadius = getRadius(fromEl);
+        const toRadius = getRadius(toEl);
+
+        // Calculate angle between centers
+        const dx = to.x - from.x;
+        const dy = to.y - from.y;
+        const angle = Math.atan2(dy, dx);
+
+        // Calculate edge points
+        const x1 = from.x + Math.cos(angle) * fromRadius;
+        const y1 = from.y + Math.sin(angle) * fromRadius;
+        const x2 = to.x - Math.cos(angle) * toRadius;
+        const y2 = to.y - Math.sin(angle) * toRadius;
+
         const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        line.setAttribute('x1', fromEl.x);
-        line.setAttribute('y1', fromEl.y);
-        line.setAttribute('x2', toEl.x);
-        line.setAttribute('y2', toEl.y);
+        line.setAttribute('x1', x1);
+        line.setAttribute('y1', y1);
+        line.setAttribute('x2', x2);
+        line.setAttribute('y2', y2);
         line.setAttribute('class', 'bpmn-connection');
         line.setAttribute('stroke-width', 1.5);
         line.setAttribute('marker-end', 'url(#arrowhead)');
@@ -3306,7 +3412,7 @@ Your tasks:
                     }
 
                     // Include subprocess-specific fields
-                    if (element.type === 'subProcess') {
+                    if (element.type === 'subProcess' || element.type === 'eventSubProcess') {
                         exported.expanded = element.expanded;
                         exported.width = element.width;
                         exported.height = element.height;
@@ -3370,10 +3476,10 @@ Your tasks:
                     if (data.process.elements) {
                         data.process.elements.forEach(element => {
                             // Ensure subprocess fields are initialized
-                            if (element.type === 'subProcess') {
-                                element.expanded = element.expanded || false;
-                                element.width = element.width || 300;
-                                element.height = element.height || 200;
+                            if (element.type === 'subProcess' || element.type === 'eventSubProcess') {
+                                element.expanded = element.expanded || true;  // Event subprocesses expanded by default
+                                element.width = element.width || 700;
+                                element.height = element.height || 150;
                                 element.childElements = element.childElements || [];
                                 element.childConnections = element.childConnections || [];
                             }
@@ -3393,10 +3499,19 @@ Your tasks:
                         });
                     }
 
+                    // Extract ID counter from imported IDs (handle various ID formats)
+                    const extractNumber = (id) => {
+                        if (!id) return 0;
+                        const parts = id.split('_');
+                        const lastPart = parts[parts.length - 1];
+                        const num = parseInt(lastPart);
+                        return isNaN(num) ? 0 : num;
+                    };
+
                     this.idCounter = Math.max(
-                        ...this.pools.map(p => parseInt(p.id.split('_')[1]) || 0),
-                        ...this.elements.map(e => parseInt(e.id.split('_')[1]) || 0),
-                        ...this.connections.map(c => parseInt(c.id.split('_')[1]) || 0),
+                        ...this.pools.map(p => extractNumber(p.id)),
+                        ...this.elements.map(e => extractNumber(e.id)),
+                        ...this.connections.map(c => extractNumber(c.id)),
                         0
                     );
                 }

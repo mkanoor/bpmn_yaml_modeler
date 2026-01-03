@@ -360,6 +360,14 @@ header h1 {
     font-weight: 600;
 }
 
+header h1 .version {
+    font-size: 0.75rem;
+    font-weight: 400;
+    opacity: 0.7;
+    margin-left: 0.5rem;
+    vertical-align: middle;
+}
+
 .toolbar {
     display: flex;
     gap: 0.5rem;
@@ -587,6 +595,11 @@ header h1 {
 }
 
 .bpmn-element.selected {
+    filter: drop-shadow(0 0 4px var(--selection-glow));
+}
+
+/* Selection highlight for subprocess child elements */
+.subprocess-child-element.selected {
     filter: drop-shadow(0 0 4px var(--selection-glow));
 }
 
@@ -829,11 +842,15 @@ button:active:not(:disabled) {
 }
 
 .subprocess-children {
+    /* Allow clicks to pass through to child elements */
     pointer-events: none;
 }
 
 .subprocess-child-element {
     opacity: 1;
+    /* Re-enable pointer events for child elements themselves */
+    pointer-events: all;
+    cursor: pointer;
 }
 
 .subprocess-child-text {

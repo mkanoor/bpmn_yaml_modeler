@@ -17,6 +17,18 @@ from agui_server import AGUIServer
 logger = logging.getLogger(__name__)
 
 
+class EventSubProcessHandledError(Exception):
+    """
+    Special exception to signal that an error was successfully handled
+    by an Event Sub-Process. This prevents error logging while still
+    allowing the interrupting subprocess to cancel the main flow.
+    """
+    def __init__(self, subprocess_name: str, original_error: Exception):
+        self.subprocess_name = subprocess_name
+        self.original_error = original_error
+        super().__init__(f"Error handled by Event Sub-Process: {subprocess_name}")
+
+
 class WorkflowEngine:
     """Main orchestrator for workflow execution"""
 
@@ -51,12 +63,32 @@ class WorkflowEngine:
         self.running_tasks: Dict[str, asyncio.Task] = {}
         # Track completed tasks with compensation handlers (key: task_id, value: compensation_boundary_element)
         self.compensation_handlers: Dict[str, Element] = {}
+        # Track event sub-processes and their monitoring tasks
+        self.event_subprocess_tasks: Dict[str, asyncio.Task] = {}  # key: subprocess_id, value: monitor task
+        self.event_subprocess_triggered: Dict[str, bool] = {}  # key: subprocess_id, value: triggered flag
 
     def parse_yaml(self, yaml_content: str) -> Workflow:
         """Parse YAML into workflow object model"""
         try:
             data = yaml.safe_load(yaml_content)
-            return Workflow(**data)
+
+            # Debug: Check Event Sub-Process elements in raw YAML
+            for elem in data.get('process', {}).get('elements', []):
+                if elem.get('type') == 'eventSubProcess':
+                    logger.info(f"🔍 Found Event Sub-Process in YAML: {elem.get('name')}")
+                    logger.info(f"   childElements in YAML: {elem.get('childElements') is not None}")
+                    logger.info(f"   Number of childElements in YAML: {len(elem.get('childElements', []))}")
+
+            workflow = Workflow(**data)
+
+            # Debug: Check Event Sub-Process elements after Pydantic parsing
+            for elem in workflow.process.elements:
+                if elem.type == 'eventSubProcess':
+                    logger.info(f"🔍 After Pydantic parsing: {elem.name}")
+                    logger.info(f"   childElements after parsing: {elem.childElements is not None}")
+                    logger.info(f"   Number of childElements after parsing: {len(elem.childElements) if elem.childElements else 0}")
+
+            return workflow
         except Exception as e:
             logger.error(f"Error parsing YAML: {e}")
             raise ValueError(f"Invalid YAML workflow: {e}")
@@ -88,6 +120,9 @@ class WorkflowEngine:
         )
 
         try:
+            # Start monitoring Event Sub-Processes
+            await self.start_event_subprocesses()
+
             # Find start event
             start_event = self.workflow.get_start_event()
             if not start_event:
@@ -105,6 +140,19 @@ class WorkflowEngine:
             )
 
             logger.info(f"Workflow completed successfully: {self.instance_id}")
+
+        except EventSubProcessHandledError as e:
+            # Error was handled by Event Sub-Process - this is a success
+            logger.info(f"✅ Workflow completed via Event Sub-Process: {e.subprocess_name}")
+            logger.info(f"   Original error: {type(e.original_error).__name__}: {e.original_error}")
+
+            # Broadcast as successful (error was handled)
+            duration = (datetime.now(timezone.utc) - self.start_time).total_seconds()
+            await self.agui_server.send_workflow_completed(
+                self.instance_id,
+                'success',  # Success because error was handled
+                duration
+            )
 
         except Exception as e:
             logger.error(f"Workflow execution failed: {e}", exc_info=True)
@@ -188,11 +236,21 @@ class WorkflowEngine:
             logger.info(f"🛑 Execution path cancelled at {element.name}")
             raise
 
+        except EventSubProcessHandledError as e:
+            # Error was handled by Event Sub-Process - log success, not error
+            logger.info(f"✅ {element.name} error handled by: {e.subprocess_name}")
+            # Re-raise to stop execution path (for interrupting subprocesses)
+            # DO NOT send task.error event - this is a successful recovery
+            raise
+
         except Exception as e:
-            import traceback
-            logger.error(f"Error executing element {element.name}: {e}")
-            logger.error(f"Full traceback:\n{traceback.format_exc()}")
-            await self.agui_server.send_task_error(element.id, e, retryable=False)
+            # Only log and send error events for REAL errors (not handled ones)
+            # Double-check: don't send task.error if this is a handled error
+            if not isinstance(e, EventSubProcessHandledError):
+                import traceback
+                logger.error(f"Error executing element {element.name}: {e}")
+                logger.error(f"Full traceback:\n{traceback.format_exc()}")
+                await self.agui_server.send_task_error(element.id, e, retryable=False)
             raise
 
     async def cancel_competing_tasks(self, gateway: Element, incoming_connections):
@@ -249,8 +307,167 @@ class WorkflowEngine:
             else:
                 logger.info(f"❌ Task {from_element_id} not in active_tasks (already completed or not started)")
 
-    async def execute_task(self, task: Element):
-        """Execute a task using appropriate executor"""
+    async def execute_multi_instance_task(self, task: Element):
+        """Execute a multi-instance task (loop over collection)"""
+        props = task.properties or {}
+
+        # Get multi-instance configuration
+        is_sequential = props.get('isSequential', False)
+        input_collection_name = props.get('inputCollection')
+        input_element_name = props.get('inputElement', 'item')
+        output_collection_name = props.get('outputCollection')
+        output_element_name = props.get('outputElement', 'result')
+
+        if not input_collection_name:
+            logger.error(f"Multi-instance task {task.name} missing inputCollection property")
+            return
+
+        # Get the collection from context
+        collection = self.context.get(input_collection_name, [])
+        if not isinstance(collection, (list, tuple)):
+            logger.error(f"Input collection '{input_collection_name}' is not a list/tuple")
+            return
+
+        logger.info(f"🔄 Executing multi-instance task: {task.name}")
+        logger.info(f"   Collection: {input_collection_name} ({len(collection)} items)")
+        logger.info(f"   Mode: {'Sequential' if is_sequential else 'Parallel'}")
+
+        results = []
+
+        if is_sequential:
+            # Sequential execution - one after another
+            for idx, item in enumerate(collection):
+                logger.info(f"   Instance {idx + 1}/{len(collection)}: Processing {input_element_name}")
+
+                # Create instance-specific context
+                instance_context = self.context.copy()
+                instance_context[input_element_name] = item
+                instance_context['loopCounter'] = idx
+                instance_context['nrOfInstances'] = len(collection)
+                instance_context['nrOfCompletedInstances'] = idx
+                instance_context['nrOfActiveInstances'] = 1
+
+                # Save current context, execute with instance context
+                original_context = self.context
+                self.context = instance_context
+
+                try:
+                    # Execute the task body (not execute_task to avoid recursion)
+                    await self.execute_task_body(task)
+
+                    # Collect output if specified
+                    if output_element_name and output_element_name in self.context:
+                        results.append(self.context[output_element_name])
+                finally:
+                    # Restore original context
+                    self.context = original_context
+
+                logger.info(f"   Instance {idx + 1} completed")
+
+        else:
+            # Parallel execution - all at once
+            async def execute_instance(idx, item):
+                """Execute a single instance of the multi-instance task"""
+                logger.info(f"   Instance {idx + 1}/{len(collection)}: Processing {input_element_name}")
+
+                # Create instance-specific context
+                instance_context = self.context.copy()
+                instance_context[input_element_name] = item
+                instance_context['loopCounter'] = idx
+                instance_context['nrOfInstances'] = len(collection)
+                instance_context['nrOfActiveInstances'] = len(collection)
+
+                # Execute with instance context WITHOUT modifying self.context
+                # This prevents race conditions when running in parallel
+                try:
+                    # Get executor for task type
+                    executor = self.task_executors.get_executor(task.type)
+
+                    # Execute task directly with instance context (not self.context)
+                    async for progress in executor.execute(task, instance_context):
+                        # Broadcast progress to UI
+                        await self.agui_server.send_task_progress(
+                            task.id,
+                            progress.progress,
+                            progress.status,
+                            progress.message
+                        )
+
+                    # Collect output if specified
+                    if output_element_name and output_element_name in instance_context:
+                        return instance_context[output_element_name]
+                    else:
+                        return None
+
+                except Exception as e:
+                    logger.error(f"   Instance {idx + 1} failed: {e}")
+                    raise
+
+            # Create tasks for all instances
+            tasks = [execute_instance(idx, item) for idx, item in enumerate(collection)]
+
+            # Execute all in parallel
+            logger.info(f"   Executing {len(tasks)} instances in parallel...")
+            instance_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Collect results (filter out None and exceptions)
+            for idx, result in enumerate(instance_results):
+                if isinstance(result, Exception):
+                    logger.error(f"   Instance {idx + 1} failed: {result}")
+                    results.append({'error': str(result), 'instance': idx})
+                elif result is not None:
+                    results.append(result)
+
+        # Store collected results in output collection
+        if output_collection_name:
+            self.context[output_collection_name] = results
+            logger.info(f"✅ Multi-instance complete: {len(results)} results stored in {output_collection_name}")
+
+    async def execute_standard_loop_task(self, task: Element):
+        """Execute a task with standard loop (repeat until condition is false)"""
+        props = task.properties or {}
+
+        loop_condition = props.get('loopCondition')
+        loop_maximum = props.get('loopMaximum', 100)  # Safety limit
+
+        logger.info(f"🔁 Executing standard loop task: {task.name}")
+        logger.info(f"   Condition: {loop_condition}")
+        logger.info(f"   Maximum iterations: {loop_maximum}")
+
+        loop_counter = 0
+
+        while loop_counter < loop_maximum:
+            logger.info(f"   Loop iteration {loop_counter + 1}")
+
+            # Add loop counter to context
+            self.context['loopCounter'] = loop_counter
+
+            # Execute the task
+            await self.execute_task_body(task)
+
+            # Increment counter
+            loop_counter += 1
+
+            # Evaluate loop condition
+            if loop_condition:
+                # Use gateway evaluator to evaluate the condition
+                evaluator = GatewayEvaluator(self.workflow)
+                should_continue = evaluator.evaluate_condition(loop_condition, self.context)
+
+                logger.info(f"   Loop condition evaluated to: {should_continue}")
+
+                if not should_continue:
+                    logger.info(f"   Loop condition false - exiting after {loop_counter} iterations")
+                    break
+            else:
+                # No condition means execute once
+                logger.info(f"   No loop condition - executed once")
+                break
+
+        logger.info(f"✅ Standard loop complete: {loop_counter} iterations")
+
+    async def execute_task_body(self, task: Element):
+        """Execute the actual task body (without multi-instance or loop checks)"""
         # Mark task as active
         self.active_tasks[task.id] = task
 
@@ -290,12 +507,46 @@ class WorkflowEngine:
             # Re-raise to stop this execution path
             raise
 
+        except Exception as e:
+            # Check if there's an error Event Sub-Process that can handle this
+            error_subprocess = await self.check_and_trigger_error_subprocess(e)
+
+            if error_subprocess:
+                # Error was caught by Event Sub-Process
+                logger.info(f"✅ Error handled by Event Sub-Process: {error_subprocess.name}")
+                # Remove from tracking before Event Sub-Process executes
+                if task.id in self.active_tasks:
+                    del self.active_tasks[task.id]
+                if task.id in self.running_tasks:
+                    del self.running_tasks[task.id]
+
+                # Raise special exception to signal error was handled
+                # This allows interrupting subprocesses to cancel the main flow
+                # without logging errors
+                raise EventSubProcessHandledError(error_subprocess.name, e)
+            else:
+                # No Event Sub-Process to handle this error - re-raise
+                raise
+
         finally:
             # Remove from active tasks
             if task.id in self.active_tasks:
                 del self.active_tasks[task.id]
             if task.id in self.running_tasks:
                 del self.running_tasks[task.id]
+
+    async def execute_task(self, task: Element):
+        """Execute a task using appropriate executor"""
+        # Check if this is a multi-instance task
+        if task.properties and task.properties.get('isMultiInstance'):
+            return await self.execute_multi_instance_task(task)
+
+        # Check if this is a standard loop task
+        if task.properties and task.properties.get('loopCondition'):
+            return await self.execute_standard_loop_task(task)
+
+        # Regular task execution
+        await self.execute_task_body(task)
 
         # Check if this was a user task that was rejected
         if task.type == 'userTask':
@@ -306,6 +557,62 @@ class WorkflowEngine:
                 # The rejection decision is already in context as {task.id}_decision
 
         logger.info(f"Task completed: {task.name}")
+
+    def get_expected_parallel_paths(self, join_gateway: Element, incoming) -> int:
+        """
+        Find the matching parallel fork gateway and count how many paths it created.
+        This is needed because boundary event handlers add extra incoming connections to the join,
+        but we should only wait for the number of paths created by the fork.
+        """
+        # Walk backwards from incoming connections to find the parallel fork
+        # The fork is the parallel gateway that has multiple outgoing connections
+        # and leads to this join gateway
+
+        visited = set()
+        fork_candidates = []
+
+        def find_fork_backwards(element_id, depth=0):
+            if depth > 10 or element_id in visited:  # Prevent infinite loops
+                return
+            visited.add(element_id)
+
+            # Get the element
+            element = None
+            for elem in self.workflow.process.elements:
+                if elem.id == element_id:
+                    element = elem
+                    break
+
+            if not element:
+                return
+
+            # If this is a parallel gateway with multiple outgoing connections, it might be the fork
+            if element.type == 'parallelGateway':
+                outgoing = self.workflow.get_outgoing_connections(element)
+                if len(outgoing) > 1:
+                    fork_candidates.append((element, len(outgoing), depth))
+                    logger.info(f"Found parallel fork candidate: {element.id} with {len(outgoing)} outgoing paths (depth {depth})")
+
+            # Continue walking backwards
+            incoming_to_element = self.workflow.get_incoming_connections(element)
+            for conn in incoming_to_element:
+                find_fork_backwards(conn.from_, depth + 1)
+
+        # Start from all incoming connections to the join
+        for conn in incoming:
+            find_fork_backwards(conn.from_)
+
+        # Use the fork with the most outgoing paths and closest depth (most likely match)
+        if fork_candidates:
+            # Sort by number of outgoing paths (desc), then by depth (asc)
+            fork_candidates.sort(key=lambda x: (-x[1], x[2]))
+            fork, num_paths, depth = fork_candidates[0]
+            logger.info(f"Using fork {fork.id} ({fork.name}) with {num_paths} outgoing paths")
+            return num_paths
+
+        # Fallback: use incoming connection count (old behavior)
+        logger.warning(f"Could not find matching fork for join {join_gateway.id}, using incoming count")
+        return len(incoming)
 
     async def execute_gateway(self, gateway: Element):
         """Execute a gateway and return next element(s) to follow"""
@@ -340,9 +647,29 @@ class WorkflowEngine:
                 # - Exclusive gateways: only one path arrives anyway
 
                 if gateway.type == 'parallelGateway':
-                    # Parallel merge: wait for all paths
-                    # This would require more sophisticated tracking - for now, just pass through
-                    logger.info(f"Parallel gateway merge - passing through (simplified)")
+                    # Parallel merge: wait for all paths to arrive
+                    logger.info(f"Parallel gateway merge - tracking arrivals")
+
+                    # Get the current execution path identifier (use asyncio task id)
+                    current_task_id = id(asyncio.current_task())
+                    self.merge_arrivals[gateway.id]['elements'].add(current_task_id)
+
+                    arrivals = len(self.merge_arrivals[gateway.id]['elements'])
+
+                    # For parallel join, we need to find the matching fork gateway
+                    # and count how many paths it created (not count incoming connections which may include boundary handlers)
+                    expected = self.get_expected_parallel_paths(gateway, incoming)
+
+                    logger.info(f"Parallel join {gateway.id}: {arrivals}/{expected} paths arrived")
+
+                    if arrivals < expected:
+                        # Not all paths have arrived yet - this path should wait/stop
+                        logger.info(f"Parallel join {gateway.id}: Waiting for {expected - arrivals} more path(s) - stopping this path")
+                        return []  # Stop this execution path
+                    else:
+                        # All paths have arrived - mark as completed and continue
+                        logger.info(f"Parallel join {gateway.id}: All {expected} paths arrived - continuing")
+                        self.merge_arrivals[gateway.id]['completed'] = True
                 elif gateway.type == 'inclusiveGateway':
                     # Inclusive merge: first path wins
                     if self.merge_arrivals[gateway.id]['completed']:
@@ -638,9 +965,21 @@ class WorkflowEngine:
                         logger.info(f"⏭️  Non-interrupting error boundary - task continues, normal flow will continue")
                         return False  # Task continues, normal flow continues
 
-            # No boundary caught the error - re-raise
-            logger.error(f"❌ No error boundary event caught {error_type} - re-raising")
-            raise
+            # No boundary caught the error - check if Event Sub-Process can handle it
+            logger.info(f"❌ No error boundary event caught {error_type}")
+
+            # Check if there's an error Event Sub-Process that can handle this
+            error_subprocess = await self.check_and_trigger_error_subprocess(e)
+
+            if error_subprocess:
+                # Error was caught by Event Sub-Process
+                logger.info(f"✅ Error handled by Event Sub-Process: {error_subprocess.name}")
+                # Raise special exception to signal error was handled
+                raise EventSubProcessHandledError(error_subprocess.name, e)
+            else:
+                # No Event Sub-Process to handle this error - re-raise
+                logger.error(f"❌ No Event Sub-Process found to handle error - re-raising")
+                raise
 
     async def execute_task_with_timer_boundaries(self, task: Element, timer_boundaries: List[Element]) -> bool:
         """Execute task with timer boundary event support
@@ -859,6 +1198,313 @@ class WorkflowEngine:
 
         logger.info(f"Parsed duration '{duration_str}' = {total_seconds} seconds")
         return total_seconds if total_seconds > 0 else 30.0  # Default 30s
+
+    async def start_event_subprocesses(self):
+        """Start monitoring all Event Sub-Processes in the workflow"""
+        # Find all Event Sub-Processes
+        event_subprocesses = [
+            elem for elem in self.workflow.process.elements
+            if elem.type == 'eventSubProcess'
+        ]
+
+        if not event_subprocesses:
+            logger.info("No Event Sub-Processes found in workflow")
+            return
+
+        logger.info(f"🎯 Found {len(event_subprocesses)} Event Sub-Process(es) to monitor")
+
+        for subprocess in event_subprocesses:
+            # Start monitoring this event subprocess
+            monitor_task = asyncio.create_task(
+                self.monitor_event_subprocess(subprocess)
+            )
+            self.event_subprocess_tasks[subprocess.id] = monitor_task
+            logger.info(f"🎯 Started monitoring Event Sub-Process: {subprocess.name} (id: {subprocess.id})")
+
+    async def monitor_event_subprocess(self, subprocess: Element):
+        """Monitor an Event Sub-Process for its triggering event"""
+        logger.info(f"📡 Monitoring Event Sub-Process: {subprocess.name}")
+
+        # Get properties
+        props = subprocess.properties or {}
+        is_interrupting = props.get('isInterrupting', True)
+
+        # Find the start event within this subprocess
+        start_event = None
+        if subprocess.childElements:
+            for child in subprocess.childElements:
+                if child.type in ['errorStartEvent', 'timerStartEvent', 'messageStartEvent',
+                                  'signalStartEvent', 'escalationStartEvent', 'compensationStartEvent']:
+                    start_event = child
+                    break
+
+        if not start_event:
+            logger.warning(f"Event Sub-Process {subprocess.name} has no event start event")
+            return
+
+        logger.info(f"📡 Event Sub-Process {subprocess.name} triggered by: {start_event.type}")
+
+        # Monitor based on event type
+        try:
+            if start_event.type == 'timerStartEvent':
+                await self.monitor_timer_start_event(subprocess, start_event, is_interrupting)
+            elif start_event.type == 'errorStartEvent':
+                await self.monitor_error_start_event(subprocess, start_event, is_interrupting)
+            elif start_event.type == 'messageStartEvent':
+                await self.monitor_message_start_event(subprocess, start_event, is_interrupting)
+            elif start_event.type == 'signalStartEvent':
+                await self.monitor_signal_start_event(subprocess, start_event, is_interrupting)
+            elif start_event.type == 'escalationStartEvent':
+                await self.monitor_escalation_start_event(subprocess, start_event, is_interrupting)
+            else:
+                logger.warning(f"Unsupported event type for Event Sub-Process: {start_event.type}")
+
+        except asyncio.CancelledError:
+            logger.info(f"🛑 Event Sub-Process monitoring cancelled: {subprocess.name}")
+            raise
+        except Exception as e:
+            logger.error(f"Error monitoring Event Sub-Process {subprocess.name}: {e}", exc_info=True)
+
+    async def monitor_timer_start_event(self, subprocess: Element, start_event: Element, is_interrupting: bool):
+        """Monitor a timer start event for Event Sub-Process"""
+        props = start_event.properties or {}
+        duration_str = props.get('timerDuration', 'PT30S')
+        duration_seconds = self.parse_iso8601_duration(duration_str)
+
+        logger.info(f"⏰ Timer Event Sub-Process will trigger in {duration_seconds}s")
+
+        # Wait for timer
+        await asyncio.sleep(duration_seconds)
+
+        logger.info(f"⏰ Timer Event Sub-Process triggered: {subprocess.name}")
+
+        # Execute the subprocess
+        await self.trigger_event_subprocess(subprocess, start_event, is_interrupting, {
+            'trigger_type': 'timer',
+            'duration': duration_seconds
+        })
+
+    async def monitor_error_start_event(self, subprocess: Element, start_event: Element, is_interrupting: bool):
+        """Monitor for errors that should trigger this Event Sub-Process"""
+        # This is passive monitoring - errors will be caught in execute_task_with_error_boundaries
+        # and will call trigger_event_subprocess directly
+        logger.info(f"🔴 Error Event Sub-Process ready to catch errors: {subprocess.name}")
+
+        # Wait indefinitely until cancelled or triggered
+        try:
+            while not self.event_subprocess_triggered.get(subprocess.id, False):
+                await asyncio.sleep(1)
+        except asyncio.CancelledError:
+            raise
+
+    async def monitor_message_start_event(self, subprocess: Element, start_event: Element, is_interrupting: bool):
+        """Monitor for messages that should trigger this Event Sub-Process"""
+        props = start_event.properties or {}
+        message_ref = props.get('messageRef', '')
+
+        logger.info(f"📨 Message Event Sub-Process waiting for message: {message_ref}")
+
+        # Poll context for message arrival
+        try:
+            while True:
+                # Check if message has arrived in context
+                message_key = f'message_{message_ref}_received'
+                if self.context.get(message_key, False):
+                    logger.info(f"📨 Message received, triggering Event Sub-Process: {subprocess.name}")
+
+                    await self.trigger_event_subprocess(subprocess, start_event, is_interrupting, {
+                        'trigger_type': 'message',
+                        'message_ref': message_ref,
+                        'message_data': self.context.get(f'message_{message_ref}_data', {})
+                    })
+                    break
+
+                await asyncio.sleep(0.5)  # Poll every 500ms
+        except asyncio.CancelledError:
+            raise
+
+    async def monitor_signal_start_event(self, subprocess: Element, start_event: Element, is_interrupting: bool):
+        """Monitor for signals that should trigger this Event Sub-Process"""
+        props = start_event.properties or {}
+        signal_ref = props.get('signalRef', '')
+
+        logger.info(f"📡 Signal Event Sub-Process waiting for signal: {signal_ref}")
+
+        # Poll context for signal
+        try:
+            while True:
+                signal_key = f'signal_{signal_ref}_triggered'
+                if self.context.get(signal_key, False):
+                    logger.info(f"📡 Signal received, triggering Event Sub-Process: {subprocess.name}")
+
+                    await self.trigger_event_subprocess(subprocess, start_event, is_interrupting, {
+                        'trigger_type': 'signal',
+                        'signal_ref': signal_ref,
+                        'signal_data': self.context.get(f'signal_{signal_ref}_data', {})
+                    })
+                    break
+
+                await asyncio.sleep(0.5)
+        except asyncio.CancelledError:
+            raise
+
+    async def monitor_escalation_start_event(self, subprocess: Element, start_event: Element, is_interrupting: bool):
+        """Monitor for escalations that should trigger this Event Sub-Process"""
+        props = start_event.properties or {}
+        escalation_code = props.get('escalationCode', '')
+
+        logger.info(f"🔺 Escalation Event Sub-Process waiting for escalation: {escalation_code}")
+
+        # Poll context for escalation
+        try:
+            while True:
+                escalation_key = f'escalation_{escalation_code}_triggered'
+                if self.context.get(escalation_key, False):
+                    logger.info(f"🔺 Escalation received, triggering Event Sub-Process: {subprocess.name}")
+
+                    await self.trigger_event_subprocess(subprocess, start_event, is_interrupting, {
+                        'trigger_type': 'escalation',
+                        'escalation_code': escalation_code,
+                        'escalation_data': self.context.get(f'escalation_{escalation_code}_data', {})
+                    })
+                    break
+
+                await asyncio.sleep(0.5)
+        except asyncio.CancelledError:
+            raise
+
+    async def check_and_trigger_error_subprocess(self, error: Exception) -> Optional[Element]:
+        """Check if there's an error Event Sub-Process that can handle this error, and trigger it"""
+        logger.info(f"🔍 Checking for error Event Sub-Process to handle: {type(error).__name__}: {str(error)}")
+
+        # Find all error Event Sub-Processes
+        error_subprocesses = [
+            elem for elem in self.workflow.process.elements
+            if elem.type == 'eventSubProcess'
+        ]
+
+        logger.info(f"🔍 Found {len(error_subprocesses)} Event Sub-Process(es) in workflow")
+
+        for subprocess in error_subprocesses:
+            logger.info(f"🔍 Checking Event Sub-Process: {subprocess.name} (id: {subprocess.id})")
+            logger.info(f"   Has childElements: {subprocess.childElements is not None}")
+            logger.info(f"   Number of childElements: {len(subprocess.childElements) if subprocess.childElements else 0}")
+
+            if not subprocess.childElements:
+                logger.info(f"   ⚠️ Skipping - no childElements")
+                continue
+
+            # Find the start event
+            logger.info(f"   Child element types: {[e.type for e in subprocess.childElements]}")
+            start_events = [e for e in subprocess.childElements if e.type == 'errorStartEvent']
+            logger.info(f"   Found {len(start_events)} errorStartEvent(s)")
+
+            if not start_events:
+                logger.info(f"   ⚠️ Skipping - no errorStartEvent found")
+                continue
+
+            start_event = start_events[0]
+            props = start_event.properties or {}
+            error_code = props.get('errorCode', '')
+
+            logger.info(f"   Error code filter: '{error_code}' (empty = catch all)")
+            logger.info(f"   Error message: '{str(error)}'")
+            logger.info(f"   Match check: error_code=='' is {error_code == ''}, '{error_code}' in '{str(error)}' is {error_code in str(error)}")
+
+            # Check if this subprocess can handle this error
+            # Empty error code = catch all errors
+            # Otherwise check if error message contains the error code
+            if error_code == '' or error_code in str(error):
+                logger.info(f"✅ Found matching error Event Sub-Process: {subprocess.name}")
+
+                # Get interrupting flag
+                is_interrupting = subprocess.properties.get('isInterrupting', True)
+
+                # Trigger the Event Sub-Process
+                await self.trigger_event_subprocess(subprocess, start_event, is_interrupting, {
+                    'trigger_type': 'error',
+                    'error_type': type(error).__name__,
+                    'error_message': str(error),
+                    'error_code': error_code
+                })
+
+                return subprocess
+
+        logger.info(f"❌ No error Event Sub-Process found to handle this error")
+        return None
+
+    async def trigger_event_subprocess(self, subprocess: Element, start_event: Element, is_interrupting: bool, trigger_data: Dict[str, Any]):
+        """Trigger and execute an Event Sub-Process"""
+        logger.info(f"🎯 ========================================")
+        logger.info(f"🎯 Triggering EVENT SUB-PROCESS")
+        logger.info(f"🎯 Subprocess: {subprocess.name} (id: {subprocess.id})")
+        logger.info(f"🎯 Trigger: {trigger_data.get('trigger_type')}")
+        logger.info(f"🎯 Interrupting: {is_interrupting}")
+        logger.info(f"🎯 ========================================")
+
+        # Mark as triggered
+        self.event_subprocess_triggered[subprocess.id] = True
+
+        # Add trigger data to context
+        self.context[f'{subprocess.id}_trigger'] = trigger_data
+
+        # If interrupting, store tasks to cancel AFTER subprocess execution
+        tasks_to_cancel = {}
+        if is_interrupting:
+            logger.warning(f"⚠️  Interrupting Event Sub-Process - will cancel main process flow after recovery")
+            # Store list of tasks to cancel (before subprocess execution adds its own tasks)
+            tasks_to_cancel = dict(self.running_tasks.items())
+            logger.info(f"📝 Stored {len(tasks_to_cancel)} tasks to cancel after Event Sub-Process completes")
+
+        # Execute the subprocess
+        if subprocess.childElements:
+            # Find next element after start event
+            next_elements = []
+            if subprocess.childConnections:
+                for conn in subprocess.childConnections:
+                    if conn.from_ == start_event.id:
+                        # Find the target element
+                        for elem in subprocess.childElements:
+                            if elem.id == conn.to:
+                                next_elements.append(elem)
+
+            # Create temporary workflow structure for subprocess execution
+            from models import Workflow as WorkflowModel
+
+            # Store original workflow
+            original_workflow = self.workflow
+
+            # Create mini workflow with subprocess elements
+            mini_workflow = {
+                'process': {
+                    'id': subprocess.id,
+                    'name': subprocess.name,
+                    'elements': subprocess.childElements,
+                    'connections': subprocess.childConnections or [],
+                    'pools': []
+                }
+            }
+
+            self.workflow = WorkflowModel(**mini_workflow)
+
+            # Execute subprocess elements
+            try:
+                for elem in next_elements:
+                    await self.execute_from_element(elem)
+
+                logger.info(f"🎯 Event Sub-Process completed: {subprocess.name}")
+            finally:
+                # Restore original workflow
+                self.workflow = original_workflow
+
+        # If interrupting, NOW cancel the main process tasks (after recovery is complete)
+        if is_interrupting and tasks_to_cancel:
+            logger.warning(f"🛑 Now cancelling {len(tasks_to_cancel)} main process tasks")
+            for task_id, task in tasks_to_cancel.items():
+                logger.info(f"🛑 Cancelling task {task_id}")
+                task.cancel()
+
+        logger.info(f"🎯 ======================================== (END EVENT SUB-PROCESS)")
 
 
 async def execute_workflow_from_file(yaml_file: str, agui_server: AGUIServer, context: Dict[str, Any] = None, mcp_client=None):
